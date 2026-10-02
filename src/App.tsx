@@ -16,6 +16,8 @@ import { AuthGate } from './components/AuthGate';
 import { ShopSetupGate } from './components/ShopSetupGate';
 import { getStoredSession, signOut } from './lib/supabase';
 import { loadWorkspace, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
+import { NativeAgentStatus } from './components/NativeAgentStatus';
+import { NativeFilePicker } from './components/NativeFilePicker';
 
 export default function App() {
   const [activeViewMode, setActiveViewMode] = useState<'desktop' | 'mobile_simulator'>('desktop');
@@ -159,14 +161,14 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <div className="h-8 px-4 flex items-center justify-between bg-slate-900 border-b border-slate-800 text-[11px] text-slate-400">
         <div className="flex items-center gap-2"><span className={`w-1.5 h-1.5 rounded-full ${connectedToCloud ? 'bg-emerald-400' : 'bg-amber-400'}`} />{connectedToCloud ? 'Supabase connected · shop workspace synced' : workspaceLoading ? 'Connecting to Supabase…' : workspaceError || 'Cloud connection unavailable'}</div>
-        <button onClick={() => { signOut(); window.location.reload(); }} className="hover:text-white">Sign out</button>
+        <div className="flex items-center gap-4"><NativeAgentStatus /><button onClick={() => { signOut(); window.location.reload(); }} className="hover:text-white">Sign out</button></div>
       </div>
       <DesktopHeader activeViewMode={activeViewMode} setActiveViewMode={setActiveViewMode} shopName={shopProfile.shopName} isWhatsAppConnected={shopProfile.isWhatsAppConnected} activeJobsCount={activeQueueCount} onOpenTestStudentChat={() => setActiveViewMode('mobile_simulator')} />
       {activeViewMode === 'desktop' ? (
         <div className="flex-1 flex overflow-hidden">
           <NavigationSidebar currentTab={currentTab} setCurrentTab={setCurrentTab} shopProfile={shopProfile} activeQueueCount={activeQueueCount} readyForPickupCount={readyForPickupCount} onOpenSettings={() => setShowSettingsModal(true)} />
           <main className="flex-1 overflow-y-auto p-6 bg-slate-950/90">
-            <div className="max-w-7xl mx-auto space-y-6">
+            <div className="max-w-7xl mx-auto space-y-6"><NativeFilePicker />
               {currentTab === 'spooler' && <SpoolerMonitor jobs={jobs} printers={printers} shopProfile={shopProfile} onUpdateJobStatus={handleUpdateJobStatus} onMarkStapled={handleMarkStapled} onOpenJobInspection={(job) => setInspectedJob(job)} onTriggerManualPrint={handleTriggerManualPrint} />}
               {currentTab === 'whatsapp' && <WhatsAppHub shopProfile={shopProfile} onOpenTestStudentChat={() => setActiveViewMode('mobile_simulator')} onToggleWhatsAppConnection={handleToggleWhatsAppConnection} />}
               {currentTab === 'orders' && <OrdersTable jobs={jobs} shopProfile={shopProfile} onOpenJobInspection={(job) => setInspectedJob(job)} onUpdateJobStatus={handleUpdateJobStatus} onMarkStapled={handleMarkStapled} onTriggerManualPrint={handleTriggerManualPrint} />}
