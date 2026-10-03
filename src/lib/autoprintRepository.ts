@@ -87,6 +87,35 @@ export async function loadWorkspace(): Promise<{ shop: ShopProfile; printers: Pr
   const jobs = await Promise.all(jobRows.map(async (job) => mapJob(job, printerRows.find(p => p.id === job.printer_id), await resolveLocalFilePath(job))));
   return { shop: profile, printers: printerRows.map(p => mapPrinter(p, statusRows.find(st => st.printer_id === p.id))), jobs };
 }
+export async function reconcileNativePrintQueue(jobs: PrintJob[], autoSpoolEnabled: boolean) {
+  if (!window.autoPrintNative) return;
+  const nativeQueue = await window.autoPrintNative.print.queue();
+  const nativeById = new Map(nativeQueue.map((item) => [item.id, item]));
+  const updates: Array<{ id: string; status: PrintJob['jobStatus'] }> = [];
+
+  for (const job of jobs) {
+    const native = nativeById.get(job.id);
+    if (native?.status === 'completed' && job.jobStatus !== 'printed_ready') {
+      updates.push({ id: job.id, status: 'printed_ready' });
+      continue;
+    }
+    if (native?.status === 'failed' && job.jobStatus !== 'cancelled') {
+      updates.push({ id: job.id, status: 'cancelled' });
+      continue;
+    }
+    if (autoSpoolEnabled && job.jobStatus === 'queued' && job.localFileId && job.printerName && !native) {
+      try {
+        await enqueueNativePrint(job);
+      } catch {
+        // Leave the cloud job queued so a transient desktop/file problem can be retried.
+      }
+    }
+  }
+
+  await Promise.all(updates.map((update) => updateJobStatus(update.id, update.status)));
+  return { updates, nativeQueue };
+}
+
 export async function enqueueNativePrint(job: PrintJob) {
   if (!window.autoPrintNative) throw new Error('Native desktop agent is not active.');
   if (!job.localFileId) throw new Error('This job has no native local file ID.');
