@@ -15,7 +15,7 @@ import { soundManager } from './utils/audio';
 import { AuthGate } from './components/AuthGate';
 import { ShopSetupGate } from './components/ShopSetupGate';
 import { getStoredSession, signOut } from './lib/supabase';
-import { loadWorkspace, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
+import { loadWorkspace, registerCurrentDevice, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
 import { NativeAgentStatus } from './components/NativeAgentStatus';
 import { NativeFilePicker } from './components/NativeFilePicker';
 
@@ -45,6 +45,11 @@ export default function App() {
         setJobs(workspace.jobs);
         setConnectedToCloud(true);
         setWorkspaceError('');
+        if (window.autoPrintNative) {
+          void registerCurrentDevice(workspace.shop.id).catch((error) => {
+            setWorkspaceError(error instanceof Error ? `Desktop device registration failed: ${error.message}` : 'Desktop device registration failed.');
+          });
+        }
       })
       .catch((error) => {
         if (cancelled) return;
