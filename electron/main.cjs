@@ -83,6 +83,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   registerIpc();
+  recoverInterruptedPrints();
   void processPrintQueue();
   createWindow();
   app.on('activate', () => {
@@ -104,10 +105,28 @@ function queuePath() {
 function readPrintQueue() {
   try {
     const parsed = JSON.parse(fs.readFileSync(queuePath(), 'utf8'));
-    return parsed?.version === PRINT_QUEUE_VERSION && Array.isArray(parsed.jobs) ? parsed.jobs : [];
+    if (parsed?.version !== PRINT_QUEUE_VERSION || !Array.isArray(parsed.jobs)) return [];
+    return parsed.jobs;
   } catch {
     return [];
   }
+}
+
+function recoverInterruptedPrints() {
+  const jobs = readPrintQueue();
+  let changed = false;
+  const recovered = jobs.map((job) => {
+    if (job.status !== 'printing') return job;
+    changed = true;
+    return {
+      ...job,
+      status: 'failed',
+      completedAt: new Date().toISOString(),
+      error: 'Print process was interrupted while this job was being submitted. Verify the printer before retrying.',
+    };
+  });
+  if (changed) writePrintQueue(recovered);
+  return recovered;
 }
 
 function writePrintQueue(jobs) {
