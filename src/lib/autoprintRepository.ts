@@ -21,8 +21,15 @@ function mapPrinter(row: any, status?: any): PrinterDevice {
   const modes = Array.isArray(row.supported_modes) ? row.supported_modes : ['bw'];
   return { id: row.id, name: row.printer_name, brand: row.brand || 'Unknown', model: row.model || '', connectionType: row.connection_type || 'NETWORK_LAN', ipOrPort: row.ip_or_port || row.location || '', supportedModes: modes as PrinterDevice['supportedModes'], status: row.status || (status?.is_online ? 'ready' : 'offline'), paperTraySheets: Number(status?.a4_sheets_remaining ?? row.paper_tray_sheets ?? 0), tonerLevelPercent: Number(status?.ink_black_percent ?? row.toner_level_percent ?? 0), activeJobId: row.active_job_id || undefined };
 }
-function mapJob(row: any, printer?: any): PrintJob {
-  const filePath = getLocalFilePath(row.id);
+async function resolveLocalFilePath(row: any): Promise<string> {
+  if (window.autoPrintNative && row.local_file_id) {
+    const record = await window.autoPrintNative.files.resolve(row.local_file_id);
+    return record?.path || '';
+  }
+  return getLocalFilePath(row.id);
+}
+
+function mapJob(row: any, printer: any, filePath: string): PrintJob {
   return {
     id: row.id, tokenNumber: row.token_number || `JOB-${row.id.slice(0, 6).toUpperCase()}`, customerName: row.customer_name || 'Customer', customerPhone: row.customer_phone || '',
     fileName: row.document_name || row.local_file_name || 'Document', fileSize: formatSize(row.document_size_bytes), fileType: ((row.document_mime_type || '').split('/').pop() || 'pdf') as PrintJob['fileType'],
@@ -77,7 +84,8 @@ export async function loadWorkspace(): Promise<{ shop: ShopProfile; printers: Pr
     automationSettings: { autoSpoolEnabled: s.auto_spool_enabled ?? true, headerStampEnabled: s.header_stamp_enabled ?? true, headerStampFontSize: Number(s.header_stamp_font_size ?? 8), headerStampFormat: s.header_stamp_format || 'AutoPrint Token #{TOKEN} · {CUSTOMER_NAME} · {PHONE_LAST4}', separatorSheetEnabled: s.separator_sheet_enabled ?? true, autoNotifyOnComplete: s.auto_notify_on_complete ?? true, soundAlerts: s.sound_alerts ?? true },
     subscription: { plan: 'pro', status: 'active', nextBillingDate: '', prepaidWalletBalance: 0, lifetimePlatformFeePaid: 0, totalOrdersHandled: jobRows.length }
   };
-  return { shop: profile, printers: printerRows.map(p => mapPrinter(p, statusRows.find(st => st.printer_id === p.id))), jobs: jobRows.map(j => mapJob(j, printerRows.find(p => p.id === j.printer_id))) };
+  const jobs = await Promise.all(jobRows.map(async (job) => mapJob(job, printerRows.find(p => p.id === job.printer_id), await resolveLocalFilePath(job))));
+  return { shop: profile, printers: printerRows.map(p => mapPrinter(p, statusRows.find(st => st.printer_id === p.id))), jobs };
 }
 export async function updateJobStatus(jobId: string, status: PrintJob['jobStatus']) {
   const session = getStoredSession(); if (!session) throw new Error('Not signed in.');
