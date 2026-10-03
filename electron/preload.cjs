@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('autoPrintNative', {
     choose: () => ipcRenderer.invoke('files:choose'),
     stat: (filePath) => ipcRenderer.invoke('files:stat', filePath),
     register: (filePath) => ipcRenderer.invoke('files:register', filePath),
+    resolve: (localFileId) => ipcRenderer.invoke('files:resolve', localFileId),
   },
   printers: {
     list: () => ipcRenderer.invoke('printers:list'),
