@@ -15,7 +15,7 @@ import { soundManager } from './utils/audio';
 import { AuthGate } from './components/AuthGate';
 import { ShopSetupGate } from './components/ShopSetupGate';
 import { getStoredSession, signOut } from './lib/supabase';
-import { loadWorkspace, registerCurrentDevice, enqueueNativePrint, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
+import { loadWorkspace, registerCurrentDevice, enqueueNativePrint, reconcileNativePrintQueue, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
 import { NativeAgentStatus } from './components/NativeAgentStatus';
 import { NativeFilePicker } from './components/NativeFilePicker';
 
@@ -97,6 +97,35 @@ export default function App() {
     };
   }, [connectedToCloud, shopProfile.id]);
 
+  useEffect(() => {
+    if (!connectedToCloud || !window.autoPrintNative || !shopProfile.id || !jobs.length) return;
+    let active = true;
+    const reconcile = async () => {
+      try {
+        const result = await reconcileNativePrintQueue(jobs, shopProfile.automationSettings.autoSpoolEnabled);
+        if (!active || !result?.updates.length) return;
+        setJobs((prev) => prev.map((job) => {
+          const update = result.updates.find((item) => item.id === job.id);
+          if (!update) return job;
+          const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          return {
+            ...job,
+            jobStatus: update.status,
+            printedAt: update.status === 'printed_ready' ? now : job.printedAt,
+          };
+        }));
+      } catch (error) {
+        if (active) setWorkspaceError(error instanceof Error ? error.message : 'Native print queue reconciliation failed.');
+      }
+    };
+    void reconcile();
+    const interval = window.setInterval(() => { void reconcile(); }, 3000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [connectedToCloud, shopProfile.id, shopProfile.automationSettings.autoSpoolEnabled, jobs]);
+  
   const activeQueueCount = jobs.filter((j) => j.jobStatus === 'queued' || j.jobStatus === 'printing').length;
   const readyForPickupCount = jobs.filter((j) => j.jobStatus === 'printed_ready').length;
 
