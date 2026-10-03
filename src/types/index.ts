@@ -6,7 +6,7 @@ export type Orientation = 'portrait' | 'landscape';
 export type JobStatus = 'pending_quote' | 'pending_payment' | 'queued' | 'spooling' | 'printing' | 'printed_ready' | 'completed' | 'cancelled';
 
 export interface PrintJob {
-  id: string; tokenNumber: string; customerName: string; customerPhone: string; fileName: string; fileSize: string;
+  id: string; localFileId?: string; tokenNumber: string; customerName: string; customerPhone: string; fileName: string; fileSize: string;
   fileType: 'pdf' | 'docx' | 'pptx' | 'image'; localFilePath: string; pageCount: number; copies: number;
   colorMode: ColorMode; duplex: DuplexMode; pagesPerSide: PagePerSide; orientation: Orientation; pageRange: string;
   printCost: number; platformFee: number; totalAmount: number;
