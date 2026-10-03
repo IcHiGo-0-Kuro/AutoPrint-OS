@@ -45,11 +45,6 @@ export default function App() {
         setJobs(workspace.jobs);
         setConnectedToCloud(true);
         setWorkspaceError('');
-        if (window.autoPrintNative) {
-          void registerCurrentDevice(workspace.shop.id).catch((error) => {
-            setWorkspaceError(error instanceof Error ? `Desktop device registration failed: ${error.message}` : 'Desktop device registration failed.');
-          });
-        }
       })
       .catch((error) => {
         if (cancelled) return;
@@ -79,6 +74,28 @@ export default function App() {
       setWorkspaceLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!connectedToCloud || !window.autoPrintNative || !shopProfile.id) return;
+
+    let active = true;
+    const heartbeat = async () => {
+      try {
+        await registerCurrentDevice(shopProfile.id);
+      } catch (error) {
+        if (active) {
+          setWorkspaceError(error instanceof Error ? `Desktop device heartbeat failed: ${error.message}` : 'Desktop device heartbeat failed.');
+        }
+      }
+    };
+
+    void heartbeat();
+    const interval = window.setInterval(() => { void heartbeat(); }, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [connectedToCloud, shopProfile.id]);
 
   const activeQueueCount = jobs.filter((j) => j.jobStatus === 'queued' || j.jobStatus === 'printing').length;
   const readyForPickupCount = jobs.filter((j) => j.jobStatus === 'printed_ready').length;
