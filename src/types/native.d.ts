@@ -32,6 +32,26 @@ declare global {
           fingerprint: string;
           registeredAt: string;
         }>;
+        resolve: (localFileId: string) => Promise<{
+          localFileId: string;
+          path: string;
+          name: string;
+          size: number;
+          modifiedAt: string;
+          fingerprint: string;
+        } | null>;
+      };
+      print: {
+        enqueue: (input: { jobId: string; localFileId: string; printerName: string; copies?: number }) => Promise<{
+          id: string; localFileId: string; printerName: string; copies: number; fileName: string;
+          status: 'queued' | 'printing' | 'completed' | 'failed';
+          queuedAt: string; startedAt: string | null; completedAt: string | null; error: string | null;
+        }>;
+        queue: () => Promise<Array<{
+          id: string; localFileId: string; printerName: string; copies: number; fileName: string;
+          status: 'queued' | 'printing' | 'completed' | 'failed';
+          queuedAt: string; startedAt: string | null; completedAt: string | null; error: string | null;
+        }>>;
       };
       printers: {
         list: () => Promise<Array<{
