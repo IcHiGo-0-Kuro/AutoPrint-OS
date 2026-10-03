@@ -122,6 +122,14 @@ function registerIpc() {
 
   ipcMain.handle('files:register', (_, filePath) => registerLocalFile(filePath));
 
+  ipcMain.handle('files:resolve', (_, localFileId) => {
+    if (typeof localFileId !== 'string' || !localFileId.trim()) throw new Error('Invalid local file ID.');
+    const registry = readRegistry();
+    const record = Object.values(registry.files || {}).find(file => file?.localFileId === localFileId);
+    if (!record) return null;
+    return { localFileId: record.localFileId, path: record.path, name: record.name, size: record.size, modifiedAt: record.modifiedAt, fingerprint: record.fingerprint };
+  });
+
   ipcMain.handle('printers:list', () => new Promise((resolve, reject) => {
     if (process.platform !== 'win32') { resolve([]); return; }
     const command = 'Get-Printer | Select-Object Name,PrinterStatus,DriverName,PortName,WorkOffline | ConvertTo-Json -Compress';
