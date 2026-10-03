@@ -32,6 +32,14 @@ declare global {
           fingerprint: string;
           registeredAt: string;
         }>;
+        resolve: (localFileId: string) => Promise<{
+          localFileId: string;
+          path: string;
+          name: string;
+          size: number;
+          modifiedAt: string;
+          fingerprint: string;
+        } | null>;
       };
       printers: {
         list: () => Promise<Array<{
