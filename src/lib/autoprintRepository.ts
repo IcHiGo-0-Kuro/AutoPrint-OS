@@ -36,6 +36,29 @@ function mapJob(row: any, printer?: any): PrintJob {
     completedAt: row.completed_at ? new Date(row.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
   };
 }
+export async function registerCurrentDevice(shopId: string) {
+  const session = getStoredSession();
+  if (!session) throw new Error('Not signed in.');
+  if (!window.autoPrintNative) throw new Error('Native desktop agent is not active.');
+
+  const info = await window.autoPrintNative.system.info();
+  if (!info.deviceId) throw new Error('Native desktop agent did not provide a device ID.');
+
+  const deviceName = info.hostname || 'AutoPrint Desktop';
+  const rows = await db<any[]>('/rpc/register_shop_device', {
+    method: 'POST',
+    body: JSON.stringify({
+      p_shop_id: shopId,
+      p_device_key: info.deviceId,
+      p_device_name: deviceName,
+    }),
+  }, session);
+
+  const device = Array.isArray(rows) ? rows[0] : rows;
+  if (!device?.id) throw new Error('Device registration returned no device record.');
+  return device;
+}
+
 export async function loadWorkspace(): Promise<{ shop: ShopProfile; printers: PrinterDevice[]; jobs: PrintJob[] }> {
   const session = getStoredSession(); if (!session) throw new Error('Please sign in to AutoPrint OS.');
   const memberships = await db<any[]>(`/shop_members?user_id=eq.${encodeURIComponent(session.user.id)}&select=shop_id,role&order=created_at.asc&limit=1`, {}, session);
