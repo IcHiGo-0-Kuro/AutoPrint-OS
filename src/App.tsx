@@ -15,7 +15,7 @@ import { soundManager } from './utils/audio';
 import { AuthGate } from './components/AuthGate';
 import { ShopSetupGate } from './components/ShopSetupGate';
 import { getStoredSession, signOut } from './lib/supabase';
-import { loadWorkspace, registerCurrentDevice, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
+import { loadWorkspace, registerCurrentDevice, enqueueNativePrint, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
 import { NativeAgentStatus } from './components/NativeAgentStatus';
 import { NativeFilePicker } from './components/NativeFilePicker';
 
@@ -147,13 +147,46 @@ export default function App() {
   }, [connectedToCloud]);
 
   const handleTriggerManualPrint = useCallback((jobId: string) => {
+    const job = jobs.find((item) => item.id === jobId);
+    if (!job) return;
+    if (!window.autoPrintNative || !job.localFileId) {
+      soundManager.playPaperFeedTick();
+      handleUpdateJobStatus(jobId, 'printing');
+      setTimeout(() => {
+        soundManager.playPrintCompleted();
+        handleUpdateJobStatus(jobId, 'printed_ready');
+      }, 2500);
+      return;
+    }
     soundManager.playPaperFeedTick();
     handleUpdateJobStatus(jobId, 'printing');
-    setTimeout(() => {
-      soundManager.playPrintCompleted();
-      handleUpdateJobStatus(jobId, 'printed_ready');
-    }, 2500);
-  }, [handleUpdateJobStatus]);
+    void enqueueNativePrint(job)
+      .then(() => {
+        const poll = window.setInterval(async () => {
+          try {
+            const queue = await window.autoPrintNative?.print.queue();
+            const current = queue?.find((item) => item.id === jobId);
+            if (!current || current.status === 'queued' || current.status === 'printing') return;
+            window.clearInterval(poll);
+            if (current.status === 'completed') {
+              soundManager.playPrintCompleted();
+              handleUpdateJobStatus(jobId, 'printed_ready');
+            } else {
+              handleUpdateJobStatus(jobId, 'cancelled');
+              setWorkspaceError(current.error || 'Native print failed.');
+            }
+          } catch (error) {
+            window.clearInterval(poll);
+            handleUpdateJobStatus(jobId, 'cancelled');
+            setWorkspaceError(error instanceof Error ? error.message : 'Could not read native print queue.');
+          }
+        }, 1000);
+      })
+      .catch((error) => {
+        handleUpdateJobStatus(jobId, 'cancelled');
+        setWorkspaceError(error instanceof Error ? error.message : 'Could not queue native print.');
+      });
+  }, [jobs, handleUpdateJobStatus]);
 
   const handleTopUpWallet = useCallback((amount: number) => {
     setShopProfile((prev) => ({ ...prev, subscription: { ...prev.subscription, prepaidWalletBalance: prev.subscription.prepaidWalletBalance + amount } }));
