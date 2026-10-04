@@ -42,8 +42,8 @@ declare global {
         } | null>;
       };
       print: {
-        enqueue: (input: { jobId: string; localFileId: string; printerName: string; copies?: number }) => Promise<{
-          id: string; localFileId: string; printerName: string; copies: number; fileName: string;
+        enqueue: (input: { jobId: string; localFileId: string; printerName: string; copies?: number; shortNumber?: string; printToken?: string; headerStampEnabled?: boolean; separatorSheetEnabled?: boolean }) => Promise<{
+          id: string; localFileId: string; printerName: string; copies: number; shortNumber?: string; printToken?: string; fileName: string; headerStampApplied?: boolean; separatorPrinted?: boolean;
           status: 'queued' | 'printing' | 'completed' | 'failed';
           queuedAt: string; startedAt: string | null; completedAt: string | null; error: string | null;
         }>;
