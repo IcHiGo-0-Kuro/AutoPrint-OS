@@ -21,17 +21,24 @@ function mapPrinter(row: any, status?: any): PrinterDevice {
   const modes = Array.isArray(row.supported_modes) ? row.supported_modes : ['bw'];
   return { id: row.id, name: row.printer_name, brand: row.brand || 'Unknown', model: row.model || '', connectionType: row.connection_type || 'NETWORK_LAN', ipOrPort: row.ip_or_port || row.location || '', supportedModes: modes as PrinterDevice['supportedModes'], status: row.status || (status?.is_online ? 'ready' : 'offline'), paperTraySheets: Number(status?.a4_sheets_remaining ?? row.paper_tray_sheets ?? 0), tonerLevelPercent: Number(status?.ink_black_percent ?? row.toner_level_percent ?? 0), activeJobId: row.active_job_id || undefined };
 }
-function mapJob(row: any, printer?: any): PrintJob {
-  const filePath = getLocalFilePath(row.id);
+async function resolveLocalFilePath(row: any): Promise<string> {
+  if (window.autoPrintNative && row.local_file_id) {
+    const record = await window.autoPrintNative.files.resolve(row.local_file_id);
+    return record?.path || '';
+  }
+  return getLocalFilePath(row.id);
+}
+
+function mapJob(row: any, printer: any, filePath: string): PrintJob {
   return {
-    id: row.id, tokenNumber: row.token_number || `JOB-${row.id.slice(0, 6).toUpperCase()}`, customerName: row.customer_name || 'Customer', customerPhone: row.customer_phone || '',
+    id: row.id, localFileId: row.local_file_id || undefined, tokenNumber: row.print_token || row.token_number || `JOB-${row.id.slice(0, 6).toUpperCase()}`, shortNumber: row.short_number || undefined, customerName: row.customer_name || 'Customer', customerPhone: row.customer_phone || '',
     fileName: row.document_name || row.local_file_name || 'Document', fileSize: formatSize(row.document_size_bytes), fileType: ((row.document_mime_type || '').split('/').pop() || 'pdf') as PrintJob['fileType'],
     localFilePath: filePath, pageCount: Number(row.document_page_count || row.pages_per_copy || 1), copies: Number(row.copies || row.print_count || 1),
     colorMode: row.color_mode === 'color' ? 'color' : 'bw', duplex: row.sides === 'double' ? 'duplex' : 'single', pagesPerSide: (row.pages_per_side || 1) as PrintJob['pagesPerSide'], orientation: row.orientation || 'portrait', pageRange: row.page_range || 'all',
     printCost: money(row.price), platformFee: money(row.platform_fee), totalAmount: money(row.total_amount || row.price), paymentStatus: row.payment === 'paid' ? 'paid' : row.payment === 'refunded' ? 'refunded' : 'unpaid',
     paymentMethod: row.payment_method || undefined, paymentTxnId: row.payment_transaction_id || undefined, jobStatus: uiJobStatus(row.status, row.hardcopy_status),
     printerId: row.printer_id || '', printerName: printer?.printer_name || 'Unassigned', currentPagePrinting: row.current_page_printing || undefined, totalPagesToPrint: Number(row.total_pages_to_print || row.document_page_count || 1),
-    traySlot: row.tray_slot || '', headerStamped: Boolean(row.header_stamped), separatorSheetIncluded: Boolean(row.separator_sheet_included), isStapled: Boolean(row.is_stapled), notes: row.notes || undefined,
+    traySlot: row.tray_slot || '', headerStamped: row.header_stamped ?? true, separatorSheetIncluded: row.separator_sheet_included ?? true, isStapled: Boolean(row.is_stapled), notes: row.notes || undefined,
     createdAt: new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), printedAt: row.printed_at ? new Date(row.printed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
     completedAt: row.completed_at ? new Date(row.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
   };
@@ -77,8 +84,93 @@ export async function loadWorkspace(): Promise<{ shop: ShopProfile; printers: Pr
     automationSettings: { autoSpoolEnabled: s.auto_spool_enabled ?? true, headerStampEnabled: s.header_stamp_enabled ?? true, headerStampFontSize: Number(s.header_stamp_font_size ?? 8), headerStampFormat: s.header_stamp_format || 'AutoPrint Token #{TOKEN} · {CUSTOMER_NAME} · {PHONE_LAST4}', separatorSheetEnabled: s.separator_sheet_enabled ?? true, autoNotifyOnComplete: s.auto_notify_on_complete ?? true, soundAlerts: s.sound_alerts ?? true },
     subscription: { plan: 'pro', status: 'active', nextBillingDate: '', prepaidWalletBalance: 0, lifetimePlatformFeePaid: 0, totalOrdersHandled: jobRows.length }
   };
-  return { shop: profile, printers: printerRows.map(p => mapPrinter(p, statusRows.find(st => st.printer_id === p.id))), jobs: jobRows.map(j => mapJob(j, printerRows.find(p => p.id === j.printer_id))) };
+  const jobs = await Promise.all(jobRows.map(async (job) => mapJob(job, printerRows.find(p => p.id === job.printer_id), await resolveLocalFilePath(job))));
+  return { shop: profile, printers: printerRows.map(p => mapPrinter(p, statusRows.find(st => st.printer_id === p.id))), jobs };
 }
+export async function syncWhatsAppDocuments() {
+  const session = getStoredSession();
+  if (!session) return { imported: 0, failed: 0, documents: [] as any[] };
+  const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined || 'https://ngdbwujpfbsgzfwfmddq.supabase.co').replace(/\/$/, '');
+  const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined || 'sb_publishable_tKjMe7fU3yBzn3HwdbbNuw_W8xzdqv1';
+  const headers = { apikey: key, Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' };
+  const listResponse = await fetch(base + '/functions/v1/whatsapp-media-sync', { method: 'POST', headers, body: JSON.stringify({ action: 'list' }) });
+  const listData = await listResponse.json();
+  if (!listResponse.ok) throw new Error(listData?.error || 'Could not load WhatsApp documents.');
+  const imported: any[] = [];
+  let failed = 0;
+  const nativeFiles = (window.autoPrintNative?.files as any);
+  if (!nativeFiles?.importRemote) throw new Error('Native desktop document importer is not available.');
+  for (const document of listData.documents || []) {
+    try {
+      const fileName = decodeURIComponent(encodeURIComponent(document.document_name || 'whatsapp-document'));
+      const importedFile = await nativeFiles.importRemote({
+        url: base + '/functions/v1/whatsapp-media-sync',
+        fileName,
+        expectedSize: Number(document.size_bytes || 0),
+        token: session.access_token,
+        action: 'download',
+        documentId: document.id,
+      });
+      const deviceId = (await window.autoPrintNative?.system.info())?.deviceId || null;
+      const ackResponse = await fetch(base + '/functions/v1/whatsapp-media-sync', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'ack', document_id: document.id, local_file_id: importedFile.localFileId, device_id: deviceId }),
+      });
+      if (!ackResponse.ok) throw new Error('Document was downloaded but could not be acknowledged.');
+      imported.push({ ...document, local_file_id: importedFile.localFileId, path: importedFile.path });
+    } catch (error) {
+      failed += 1;
+      console.error('WhatsApp document import failed', document.id, error);
+    }
+  }
+  return { imported: imported.length, failed, documents: imported };
+}
+export async function reconcileNativePrintQueue(jobs: PrintJob[], autoSpoolEnabled: boolean) {
+  if (!window.autoPrintNative) return;
+  const nativeQueue = await window.autoPrintNative.print.queue();
+  const nativeById = new Map(nativeQueue.map((item) => [item.id, item]));
+  const updates: Array<{ id: string; status: PrintJob['jobStatus'] }> = [];
+
+  for (const job of jobs) {
+    const native = nativeById.get(job.id);
+    if (native?.status === 'completed' && job.jobStatus !== 'printed_ready') {
+      updates.push({ id: job.id, status: 'printed_ready' });
+      continue;
+    }
+    if (native?.status === 'failed' && job.jobStatus !== 'cancelled') {
+      updates.push({ id: job.id, status: 'cancelled' });
+      continue;
+    }
+    if (autoSpoolEnabled && job.jobStatus === 'queued' && job.localFileId && job.printerName && !native) {
+      try {
+        await enqueueNativePrint(job);
+      } catch {
+        // Leave the cloud job queued so a transient desktop/file problem can be retried.
+      }
+    }
+  }
+
+  await Promise.all(updates.map((update) => updateJobStatus(update.id, update.status)));
+  return { updates, nativeQueue };
+}
+
+export async function enqueueNativePrint(job: PrintJob) {
+  if (!window.autoPrintNative) throw new Error('Native desktop agent is not active.');
+  if (!job.localFileId) throw new Error('This job has no native local file ID.');
+  if (!job.printerName) throw new Error('This job has no printer assigned.');
+  return window.autoPrintNative.print.enqueue({
+    jobId: job.id,
+    localFileId: job.localFileId,
+    printerName: job.printerName,
+    copies: job.copies,
+    shortNumber: job.shortNumber,
+    printToken: job.tokenNumber,
+    headerStampEnabled: job.headerStamped !== false,
+    separatorSheetEnabled: job.separatorSheetIncluded !== false,
+  });
+}
+
 export async function updateJobStatus(jobId: string, status: PrintJob['jobStatus']) {
   const session = getStoredSession(); if (!session) throw new Error('Not signed in.');
   const patch: Record<string, unknown> = { status: dbJobStatus(status), updated_at: new Date().toISOString() };

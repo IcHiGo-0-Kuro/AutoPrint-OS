@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from 'react';
 import { DesktopHeader } from './components/DesktopHeader';
 import { NavigationSidebar, NavTab } from './components/NavigationSidebar';
 import { SpoolerMonitor } from './components/SpoolerMonitor';
-import { StudentWhatsAppSimulator } from './components/StudentWhatsAppSimulator';
 import { OrdersTable } from './components/OrdersTable';
 import { WhatsAppHub } from './components/WhatsAppHub';
 import { PrinterSettings } from './components/PrinterSettings';
@@ -15,12 +14,11 @@ import { soundManager } from './utils/audio';
 import { AuthGate } from './components/AuthGate';
 import { ShopSetupGate } from './components/ShopSetupGate';
 import { getStoredSession, signOut } from './lib/supabase';
-import { loadWorkspace, registerCurrentDevice, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
+import { loadWorkspace, registerCurrentDevice, enqueueNativePrint, reconcileNativePrintQueue, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
 import { NativeAgentStatus } from './components/NativeAgentStatus';
 import { NativeFilePicker } from './components/NativeFilePicker';
 
 export default function App() {
-  const [activeViewMode, setActiveViewMode] = useState<'desktop' | 'mobile_simulator'>('desktop');
   const [currentTab, setCurrentTab] = useState<NavTab>('spooler');
   const [shopProfile, setShopProfile] = useState<ShopProfile>(initialShopProfile);
   const [printers, setPrinters] = useState<PrinterDevice[]>(initialPrinters);
@@ -97,36 +95,37 @@ export default function App() {
     };
   }, [connectedToCloud, shopProfile.id]);
 
+  useEffect(() => {
+    if (!connectedToCloud || !window.autoPrintNative || !shopProfile.id || !jobs.length) return;
+    let active = true;
+    const reconcile = async () => {
+      try {
+        const result = await reconcileNativePrintQueue(jobs, shopProfile.automationSettings.autoSpoolEnabled);
+        if (!active || !result?.updates.length) return;
+        setJobs((prev) => prev.map((job) => {
+          const update = result.updates.find((item) => item.id === job.id);
+          if (!update) return job;
+          const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          return {
+            ...job,
+            jobStatus: update.status,
+            printedAt: update.status === 'printed_ready' ? now : job.printedAt,
+          };
+        }));
+      } catch (error) {
+        if (active) setWorkspaceError(error instanceof Error ? error.message : 'Native print queue reconciliation failed.');
+      }
+    };
+    void reconcile();
+    const interval = window.setInterval(() => { void reconcile(); }, 3000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [connectedToCloud, shopProfile.id, shopProfile.automationSettings.autoSpoolEnabled, jobs]);
+  
   const activeQueueCount = jobs.filter((j) => j.jobStatus === 'queued' || j.jobStatus === 'printing').length;
   const readyForPickupCount = jobs.filter((j) => j.jobStatus === 'printed_ready').length;
-
-  const handleAddNewJobFromWhatsApp = useCallback((newJob: PrintJob) => {
-    setJobs((prev) => [newJob, ...prev]);
-    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' Today';
-    const newFeeEntry: PlatformFeeLedgerEntry = {
-      id: `fee_${Date.now()}`,
-      orderId: newJob.id,
-      tokenNumber: newJob.tokenNumber,
-      shopName: shopProfile.shopName,
-      customerPhone: newJob.customerPhone,
-      orderAmount: newJob.totalAmount,
-      platformFee: newJob.platformFee,
-      feeFormula: newJob.printCost < 10 ? '₹0.50 (order < ₹10)' : '₹1.00 (order ≥₹10)',
-      settlementMethod: 'PREPAID_WALLET_DEDUCT',
-      status: 'settled',
-      timestamp: nowTime,
-    };
-    setFeeLedger((prev) => [newFeeEntry, ...prev]);
-    setShopProfile((prev) => ({
-      ...prev,
-      subscription: {
-        ...prev.subscription,
-        prepaidWalletBalance: Math.max(0, prev.subscription.prepaidWalletBalance - newJob.platformFee),
-        lifetimePlatformFeePaid: prev.subscription.lifetimePlatformFeePaid + newJob.platformFee,
-        totalOrdersHandled: prev.subscription.totalOrdersHandled + 1,
-      },
-    }));
-  }, [shopProfile.shopName]);
 
   const handleUpdateJobStatus = useCallback((jobId: string, status: PrintJob['jobStatus']) => {
     setJobs((prev) => prev.map((j) => {
@@ -147,13 +146,46 @@ export default function App() {
   }, [connectedToCloud]);
 
   const handleTriggerManualPrint = useCallback((jobId: string) => {
+    const job = jobs.find((item) => item.id === jobId);
+    if (!job) return;
+    if (!window.autoPrintNative || !job.localFileId) {
+      soundManager.playPaperFeedTick();
+      handleUpdateJobStatus(jobId, 'printing');
+      setTimeout(() => {
+        soundManager.playPrintCompleted();
+        handleUpdateJobStatus(jobId, 'printed_ready');
+      }, 2500);
+      return;
+    }
     soundManager.playPaperFeedTick();
     handleUpdateJobStatus(jobId, 'printing');
-    setTimeout(() => {
-      soundManager.playPrintCompleted();
-      handleUpdateJobStatus(jobId, 'printed_ready');
-    }, 2500);
-  }, [handleUpdateJobStatus]);
+    void enqueueNativePrint(job)
+      .then(() => {
+        const poll = window.setInterval(async () => {
+          try {
+            const queue = await window.autoPrintNative?.print.queue();
+            const current = queue?.find((item) => item.id === jobId);
+            if (!current || current.status === 'queued' || current.status === 'printing') return;
+            window.clearInterval(poll);
+            if (current.status === 'completed') {
+              soundManager.playPrintCompleted();
+              handleUpdateJobStatus(jobId, 'printed_ready');
+            } else {
+              handleUpdateJobStatus(jobId, 'cancelled');
+              setWorkspaceError(current.error || 'Native print failed.');
+            }
+          } catch (error) {
+            window.clearInterval(poll);
+            handleUpdateJobStatus(jobId, 'cancelled');
+            setWorkspaceError(error instanceof Error ? error.message : 'Could not read native print queue.');
+          }
+        }, 1000);
+      })
+      .catch((error) => {
+        handleUpdateJobStatus(jobId, 'cancelled');
+        setWorkspaceError(error instanceof Error ? error.message : 'Could not queue native print.');
+      });
+  }, [jobs, handleUpdateJobStatus]);
 
   const handleTopUpWallet = useCallback((amount: number) => {
     setShopProfile((prev) => ({ ...prev, subscription: { ...prev.subscription, prepaidWalletBalance: prev.subscription.prepaidWalletBalance + amount } }));
@@ -168,31 +200,22 @@ export default function App() {
     setPrinters((prev) => prev.map((p) => (p.id === printerId ? { ...p, paperTraySheets: Math.max(0, p.paperTraySheets - 2) } : p)));
   }, []);
 
-  const handleToggleWhatsAppConnection = useCallback(() => {
-    setShopProfile((prev) => {
-      const updated = { ...prev, isWhatsAppConnected: !prev.isWhatsAppConnected };
-      if (connectedToCloud) void persistSettings(updated).catch((error) => setWorkspaceError(error instanceof Error ? error.message : 'Could not save WhatsApp connection state.'));
-      return updated;
-    });
-  }, [connectedToCloud]);
-
   if (!getStoredSession()) return <AuthGate onAuthenticated={reloadWorkspace} />;
   if (needsShopSetup) return <ShopSetupGate onCreated={reloadWorkspace} />;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="autoprint-shell min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <div className="h-8 px-4 flex items-center justify-between bg-slate-900 border-b border-slate-800 text-[11px] text-slate-400">
         <div className="flex items-center gap-2"><span className={`w-1.5 h-1.5 rounded-full ${connectedToCloud ? 'bg-emerald-400' : 'bg-amber-400'}`} />{connectedToCloud ? 'Supabase connected · shop workspace synced' : workspaceLoading ? 'Connecting to Supabase…' : workspaceError || 'Cloud connection unavailable'}</div>
         <div className="flex items-center gap-4"><NativeAgentStatus /><button onClick={() => { signOut(); window.location.reload(); }} className="hover:text-white">Sign out</button></div>
       </div>
-      <DesktopHeader activeViewMode={activeViewMode} setActiveViewMode={setActiveViewMode} shopName={shopProfile.shopName} isWhatsAppConnected={shopProfile.isWhatsAppConnected} activeJobsCount={activeQueueCount} onOpenTestStudentChat={() => setActiveViewMode('mobile_simulator')} />
-      {activeViewMode === 'desktop' ? (
+      <DesktopHeader shopName={shopProfile.shopName} isWhatsAppConnected={shopProfile.isWhatsAppConnected} activeJobsCount={activeQueueCount} />
         <div className="flex-1 flex overflow-hidden">
           <NavigationSidebar currentTab={currentTab} setCurrentTab={setCurrentTab} shopProfile={shopProfile} activeQueueCount={activeQueueCount} readyForPickupCount={readyForPickupCount} onOpenSettings={() => setShowSettingsModal(true)} />
           <main className="flex-1 overflow-y-auto p-6 bg-slate-950/90">
             <div className="max-w-7xl mx-auto space-y-6"><NativeFilePicker />
               {currentTab === 'spooler' && <SpoolerMonitor jobs={jobs} printers={printers} shopProfile={shopProfile} onUpdateJobStatus={handleUpdateJobStatus} onMarkStapled={handleMarkStapled} onOpenJobInspection={(job) => setInspectedJob(job)} onTriggerManualPrint={handleTriggerManualPrint} />}
-              {currentTab === 'whatsapp' && <WhatsAppHub shopProfile={shopProfile} onOpenTestStudentChat={() => setActiveViewMode('mobile_simulator')} onToggleWhatsAppConnection={handleToggleWhatsAppConnection} />}
+              {currentTab === 'whatsapp' && <WhatsAppHub shopProfile={shopProfile} />}
               {currentTab === 'orders' && <OrdersTable jobs={jobs} shopProfile={shopProfile} onOpenJobInspection={(job) => setInspectedJob(job)} onUpdateJobStatus={handleUpdateJobStatus} onMarkStapled={handleMarkStapled} onTriggerManualPrint={handleTriggerManualPrint} />}
               {currentTab === 'printers' && <PrinterSettings printers={printers} shopProfile={shopProfile} onAddPrinter={handleAddPrinter} onRunTestCalibration={handleRunTestCalibration} />}
               {currentTab === 'rates' && (
@@ -211,14 +234,6 @@ export default function App() {
             </div>
           </main>
         </div>
-      ) : (
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-950">
-          <div className="max-w-5xl mx-auto">
-            <div className="flex items-center justify-between mb-4"><div><h2 className="text-lg font-bold text-white">Student WhatsApp Interface Simulator</h2><p className="text-xs text-slate-400">Experience how students in your college region interact with the automated Xerox bot, receive quotes, pay via UPI QR, and get their pickup token number.</p></div><button onClick={() => setActiveViewMode('desktop')} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">Back to Shop Workstation</button></div>
-            <StudentWhatsAppSimulator shopProfile={shopProfile} activeJobs={jobs} onAddNewJobFromWhatsApp={handleAddNewJobFromWhatsApp} onClose={() => setActiveViewMode('desktop')} />
-          </div>
-        </main>
-      )}
       {inspectedJob && <JobSlipModal job={inspectedJob} shopProfile={shopProfile} onClose={() => setInspectedJob(null)} onMarkStapled={handleMarkStapled} onReprint={handleTriggerManualPrint} />}
       {showSettingsModal && <ShopSettingsModal shopProfile={shopProfile} onSave={(updated) => { setShopProfile(updated); if (connectedToCloud) void persistSettings(updated).catch((error) => setWorkspaceError(error instanceof Error ? error.message : 'Could not save shop settings.')); }} onClose={() => setShowSettingsModal(false)} />}
     </div>
