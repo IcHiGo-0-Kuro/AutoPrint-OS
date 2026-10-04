@@ -14,7 +14,7 @@ import { soundManager } from './utils/audio';
 import { AuthGate } from './components/AuthGate';
 import { ShopSetupGate } from './components/ShopSetupGate';
 import { getStoredSession, signOut } from './lib/supabase';
-import { loadWorkspace, registerCurrentDevice, enqueueNativePrint, reconcileNativePrintQueue, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
+import { loadWorkspace, registerCurrentDevice, syncWhatsAppDocuments, enqueueNativePrint, reconcileNativePrintQueue, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
 import { NativeAgentStatus } from './components/NativeAgentStatus';
 import { NativeFilePicker } from './components/NativeFilePicker';
 
@@ -72,6 +72,29 @@ export default function App() {
       setWorkspaceLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!connectedToCloud || !window.autoPrintNative || !shopProfile.id) return;
+
+    let active = true;
+    const sync = async () => {
+      try {
+        const result = await syncWhatsAppDocuments();
+        if (active && result.failed > 0) {
+          setWorkspaceError(`${result.failed} WhatsApp document import(s) failed; they will be retried.`);
+        }
+      } catch (error) {
+        if (active) setWorkspaceError(error instanceof Error ? error.message : 'WhatsApp document synchronization failed.');
+      }
+    };
+
+    void sync();
+    const interval = window.setInterval(() => { void sync(); }, 10_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [connectedToCloud, shopProfile.id]);
 
   useEffect(() => {
     if (!connectedToCloud || !window.autoPrintNative || !shopProfile.id) return;
