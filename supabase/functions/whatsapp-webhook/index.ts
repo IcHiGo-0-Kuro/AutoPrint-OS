@@ -122,6 +122,7 @@ async function sendNextQuestion(phoneNumberId: string, customerNumber: string, c
 
 function confirmationText(order: any) {
   return [
+    `Printomatic order #${order.short_number || '----'} · ${order.token_number || 'token pending'}`,
     "Please confirm your print order:",
     `Name: ${order.customer_name || "—"}`,
     `Copies: ${order.copies || "—"}`,
@@ -227,7 +228,7 @@ Deno.serve(async (request) => {
 
     let { data: order } = await supabase
       .from("whatsapp_orders")
-      .select("id,intake_step,status,customer_name,copies,color_mode,paper_size,sides")
+      .select("id,intake_step,status,customer_name,copies,color_mode,paper_size,sides,token_number,short_number")
       .eq("conversation_id", conversation.id)
       .in("status", ["collecting_details", "document_received", "ready_for_quote", "quoted"])
       .order("created_at", { ascending: false })
@@ -243,7 +244,7 @@ Deno.serve(async (request) => {
           customer_name: customer.display_name,
           intake_step: "awaiting_document",
         })
-        .select("id,intake_step,status,customer_name,copies,color_mode,paper_size,sides")
+        .select("id,intake_step,status,customer_name,copies,color_mode,paper_size,sides,token_number,short_number")
         .single();
       if (created.error) throw created.error;
       order = created.data;
@@ -330,7 +331,7 @@ Deno.serve(async (request) => {
             current_step: "confirmed",
             last_message_at: new Date().toISOString(),
           }).eq("id", conversation.id);
-          await sendText(phoneNumberId, customerNumber, "Order details confirmed. Your AutoPrint order is ready for the next quote/payment stage.", conversation.id);
+          await sendText(phoneNumberId, customerNumber, `Order #${order.short_number || "----"} confirmed. Keep this number for pickup. Your Printomatic order is ready for the next quote/payment stage.`, conversation.id);
           return json({ ok: true, order_id: order.id, step: "confirmed" });
         }
         if (isNo(textBody)) {
@@ -349,7 +350,7 @@ Deno.serve(async (request) => {
     }).eq("id", conversation.id);
 
     const refreshed = await supabase.from("whatsapp_orders")
-      .select("customer_name,copies,color_mode,paper_size,sides")
+      .select("customer_name,copies,color_mode,paper_size,sides,token_number,short_number")
       .eq("id", order.id)
       .single();
     if (refreshed.error) throw refreshed.error;
