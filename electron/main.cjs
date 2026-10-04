@@ -33,9 +33,9 @@ function getOrCreateDeviceId() {
   return registry.deviceId;
 }
 
-async function downloadRemoteFile(url, suggestedName, expectedSize) {
+async function downloadRemoteFile(url, suggestedName, expectedSize, token) {
   if (typeof url !== 'string' || !url.startsWith('https://')) throw new Error('Only HTTPS document downloads are allowed.');
-  const response = await fetch(url, { redirect: 'follow' });
+  const response = await fetch(url, { redirect: 'follow', headers: token ? { Authorization: 'Bearer ' + token } : {} });
   if (!response.ok) throw new Error('Document download failed with HTTP ' + response.status + '.');
   const contentLength = Number(response.headers.get('content-length') || 0);
   const maxBytes = 50 * 1024 * 1024;
@@ -360,7 +360,7 @@ function registerIpc() {
 
   ipcMain.handle('files:importRemote', async (_, input) => {
     if (!input || typeof input !== 'object') throw new Error('Invalid document download request.');
-    return downloadRemoteFile(input.url, input.fileName, input.expectedSize);
+    return downloadRemoteFile(input.url, input.fileName, input.expectedSize, input.token);
   });
 
   ipcMain.handle('printers:list', () => new Promise((resolve, reject) => {
