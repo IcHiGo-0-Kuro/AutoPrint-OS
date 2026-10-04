@@ -35,7 +35,7 @@ function getOrCreateDeviceId() {
 
 async function downloadRemoteFile(url, suggestedName, expectedSize, token) {
   if (typeof url !== 'string' || !url.startsWith('https://')) throw new Error('Only HTTPS document downloads are allowed.');
-  const response = await fetch(url, { redirect: 'follow', headers: token ? { Authorization: 'Bearer ' + token } : {} });
+  const response = await fetch(url, { method: 'POST', redirect: 'follow', headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}), 'content-type': 'application/json' }, body: JSON.stringify(arguments[4] || {}) });
   if (!response.ok) throw new Error('Document download failed with HTTP ' + response.status + '.');
   const contentLength = Number(response.headers.get('content-length') || 0);
   const maxBytes = 50 * 1024 * 1024;
