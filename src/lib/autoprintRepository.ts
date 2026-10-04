@@ -102,20 +102,14 @@ export async function syncWhatsAppDocuments() {
   if (!nativeFiles?.importRemote) throw new Error('Native desktop document importer is not available.');
   for (const document of listData.documents || []) {
     try {
-      const response = await fetch(base + '/functions/v1/whatsapp-media-sync', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ action: 'download', document_id: document.id }),
-      });
-      if (!response.ok) {
-        const body = await response.text();
-        throw new Error(body || 'Document handoff failed.');
-      }
-      const fileName = decodeURIComponent(response.headers.get('x-printomatic-file-name') || encodeURIComponent(document.document_name || 'whatsapp-document'));
+      const fileName = decodeURIComponent(encodeURIComponent(document.document_name || 'whatsapp-document'));
       const importedFile = await nativeFiles.importRemote({
-        url: 'data:application/octet-stream;base64,' + btoa(String.fromCharCode(...new Uint8Array(await response.arrayBuffer()))),
+        url: base + '/functions/v1/whatsapp-media-sync',
         fileName,
         expectedSize: Number(document.size_bytes || 0),
+        token: session.access_token,
+        action: 'download',
+        documentId: document.id,
       });
       const deviceId = (await window.autoPrintNative?.system.info())?.deviceId || null;
       const ackResponse = await fetch(base + '/functions/v1/whatsapp-media-sync', {
