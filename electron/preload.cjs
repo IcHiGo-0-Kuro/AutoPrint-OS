@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('autoPrintNative', {
     stat: (filePath) => ipcRenderer.invoke('files:stat', filePath),
     register: (filePath) => ipcRenderer.invoke('files:register', filePath),
     resolve: (localFileId) => ipcRenderer.invoke('files:resolve', localFileId),
+    importRemote: (input) => ipcRenderer.invoke('files:importRemote', input),
     download: (input) => ipcRenderer.invoke('files:download', input),
   },
   print: {
