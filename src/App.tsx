@@ -200,14 +200,6 @@ export default function App() {
     setPrinters((prev) => prev.map((p) => (p.id === printerId ? { ...p, paperTraySheets: Math.max(0, p.paperTraySheets - 2) } : p)));
   }, []);
 
-  const handleToggleWhatsAppConnection = useCallback(() => {
-    setShopProfile((prev) => {
-      const updated = { ...prev, isWhatsAppConnected: !prev.isWhatsAppConnected };
-      if (connectedToCloud) void persistSettings(updated).catch((error) => setWorkspaceError(error instanceof Error ? error.message : 'Could not save WhatsApp connection state.'));
-      return updated;
-    });
-  }, [connectedToCloud]);
-
   if (!getStoredSession()) return <AuthGate onAuthenticated={reloadWorkspace} />;
   if (needsShopSetup) return <ShopSetupGate onCreated={reloadWorkspace} />;
 
@@ -223,7 +215,7 @@ export default function App() {
           <main className="flex-1 overflow-y-auto p-6 bg-slate-950/90">
             <div className="max-w-7xl mx-auto space-y-6"><NativeFilePicker />
               {currentTab === 'spooler' && <SpoolerMonitor jobs={jobs} printers={printers} shopProfile={shopProfile} onUpdateJobStatus={handleUpdateJobStatus} onMarkStapled={handleMarkStapled} onOpenJobInspection={(job) => setInspectedJob(job)} onTriggerManualPrint={handleTriggerManualPrint} />}
-              {currentTab === 'whatsapp' && <WhatsAppHub shopProfile={shopProfile} onToggleWhatsAppConnection={handleToggleWhatsAppConnection} />}
+              {currentTab === 'whatsapp' && <WhatsAppHub shopProfile={shopProfile} />}
               {currentTab === 'orders' && <OrdersTable jobs={jobs} shopProfile={shopProfile} onOpenJobInspection={(job) => setInspectedJob(job)} onUpdateJobStatus={handleUpdateJobStatus} onMarkStapled={handleMarkStapled} onTriggerManualPrint={handleTriggerManualPrint} />}
               {currentTab === 'printers' && <PrinterSettings printers={printers} shopProfile={shopProfile} onAddPrinter={handleAddPrinter} onRunTestCalibration={handleRunTestCalibration} />}
               {currentTab === 'rates' && (
