@@ -87,6 +87,51 @@ export async function loadWorkspace(): Promise<{ shop: ShopProfile; printers: Pr
   const jobs = await Promise.all(jobRows.map(async (job) => mapJob(job, printerRows.find(p => p.id === job.printer_id), await resolveLocalFilePath(job))));
   return { shop: profile, printers: printerRows.map(p => mapPrinter(p, statusRows.find(st => st.printer_id === p.id))), jobs };
 }
+export async function syncWhatsAppDocuments() {
+  const session = getStoredSession();
+  if (!session) return { imported: 0, failed: 0, documents: [] as any[] };
+  const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined || 'https://ngdbwujpfbsgzfwfmddq.supabase.co').replace(/\/$/, '');
+  const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined || 'sb_publishable_tKjMe7fU3yBzn3HwdbbNuw_W8xzdqv1';
+  const headers = { apikey: key, Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' };
+  const listResponse = await fetch(base + '/functions/v1/whatsapp-media-sync', { method: 'POST', headers, body: JSON.stringify({ action: 'list' }) });
+  const listData = await listResponse.json();
+  if (!listResponse.ok) throw new Error(listData?.error || 'Could not load WhatsApp documents.');
+  const imported: any[] = [];
+  let failed = 0;
+  const nativeFiles = (window.autoPrintNative?.files as any);
+  if (!nativeFiles?.importRemote) throw new Error('Native desktop document importer is not available.');
+  for (const document of listData.documents || []) {
+    try {
+      const response = await fetch(base + '/functions/v1/whatsapp-media-sync', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'download', document_id: document.id }),
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(body || 'Document handoff failed.');
+      }
+      const fileName = decodeURIComponent(response.headers.get('x-printomatic-file-name') || encodeURIComponent(document.document_name || 'whatsapp-document'));
+      const importedFile = await nativeFiles.importRemote({
+        url: 'data:application/octet-stream;base64,' + btoa(String.fromCharCode(...new Uint8Array(await response.arrayBuffer()))),
+        fileName,
+        expectedSize: Number(document.size_bytes || 0),
+      });
+      const deviceId = (await window.autoPrintNative?.system.info())?.deviceId || null;
+      const ackResponse = await fetch(base + '/functions/v1/whatsapp-media-sync', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'ack', document_id: document.id, local_file_id: importedFile.localFileId, device_id: deviceId }),
+      });
+      if (!ackResponse.ok) throw new Error('Document was downloaded but could not be acknowledged.');
+      imported.push({ ...document, local_file_id: importedFile.localFileId, path: importedFile.path });
+    } catch (error) {
+      failed += 1;
+      console.error('WhatsApp document import failed', document.id, error);
+    }
+  }
+  return { imported: imported.length, failed, documents: imported };
+}
 export async function reconcileNativePrintQueue(jobs: PrintJob[], autoSpoolEnabled: boolean) {
   if (!window.autoPrintNative) return;
   const nativeQueue = await window.autoPrintNative.print.queue();
