@@ -223,7 +223,7 @@ export default function App() {
           <main className="flex-1 overflow-y-auto p-6 bg-slate-950/90">
             <div className="max-w-7xl mx-auto space-y-6"><NativeFilePicker />
               {currentTab === 'spooler' && <SpoolerMonitor jobs={jobs} printers={printers} shopProfile={shopProfile} onUpdateJobStatus={handleUpdateJobStatus} onMarkStapled={handleMarkStapled} onOpenJobInspection={(job) => setInspectedJob(job)} onTriggerManualPrint={handleTriggerManualPrint} />}
-              {currentTab === 'whatsapp' && <WhatsAppHub shopProfile={shopProfile} onOpenTestStudentChat={() => setActiveViewMode('mobile_simulator')} onToggleWhatsAppConnection={handleToggleWhatsAppConnection} />}
+              {currentTab === 'whatsapp' && <WhatsAppHub shopProfile={shopProfile} onToggleWhatsAppConnection={handleToggleWhatsAppConnection} />}
               {currentTab === 'orders' && <OrdersTable jobs={jobs} shopProfile={shopProfile} onOpenJobInspection={(job) => setInspectedJob(job)} onUpdateJobStatus={handleUpdateJobStatus} onMarkStapled={handleMarkStapled} onTriggerManualPrint={handleTriggerManualPrint} />}
               {currentTab === 'printers' && <PrinterSettings printers={printers} shopProfile={shopProfile} onAddPrinter={handleAddPrinter} onRunTestCalibration={handleRunTestCalibration} />}
               {currentTab === 'rates' && (
@@ -242,7 +242,6 @@ export default function App() {
             </div>
           </main>
         </div>
-      }
       {inspectedJob && <JobSlipModal job={inspectedJob} shopProfile={shopProfile} onClose={() => setInspectedJob(null)} onMarkStapled={handleMarkStapled} onReprint={handleTriggerManualPrint} />}
       {showSettingsModal && <ShopSettingsModal shopProfile={shopProfile} onSave={(updated) => { setShopProfile(updated); if (connectedToCloud) void persistSettings(updated).catch((error) => setWorkspaceError(error instanceof Error ? error.message : 'Could not save shop settings.')); }} onClose={() => setShowSettingsModal(false)} />}
     </div>
