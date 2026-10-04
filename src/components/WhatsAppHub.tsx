@@ -34,7 +34,7 @@ export function WhatsAppHub({ shopProfile }: P) {
 
   return <div className="space-y-6">
     <div>
-      <div className="autoprint-eyebrow">OPERATIONS · PHASE 1</div>
+      <div className="autoprint-eyebrow">OPERATIONS · PHASE 2</div>
       <h1 className="text-2xl font-bold tracking-tight">WhatsApp Intake</h1>
       <p className="text-sm text-slate-400 mt-1">Connect the shop’s WhatsApp number first. Incoming customers will become conversations, orders and document records automatically.</p>
     </div>
@@ -67,9 +67,9 @@ export function WhatsAppHub({ shopProfile }: P) {
     </div>
 
     <div className="autoprint-panel p-6">
-      <h3 className="font-semibold">Phase 1 data flow</h3>
+      <h3 className="font-semibold">Phase 2 guided order agent</h3>
       <div className="grid md:grid-cols-5 gap-3 mt-5 text-xs">
-        {['Customer message','Customer profile','Conversation','Order intake','Document metadata'].map((item, i) => <div key={item} className="rounded-xl border border-slate-800 bg-slate-950/60 p-4"><div className="text-slate-500 mb-2">0{i + 1}</div><div className="font-medium">{item}</div></div>)}
+        {['Name','Document','Copies','Color + paper','Duplex + confirm'].map((item, i) => <div key={item} className="rounded-xl border border-slate-800 bg-slate-950/60 p-4"><div className="text-slate-500 mb-2">0{i + 1}</div><div className="font-medium">{item}</div></div>)}
       </div>
     </div>
   </div>;
