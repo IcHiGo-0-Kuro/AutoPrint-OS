@@ -108,8 +108,7 @@ export async function syncWhatsAppDocuments() {
         fileName,
         expectedSize: Number(document.size_bytes || 0),
         token: session.access_token,
-        action: 'download',
-        documentId: document.id,
+        body: { action: 'download', document_id: document.id },
       });
       const deviceId = (await window.autoPrintNative?.system.info())?.deviceId || null;
       const ackResponse = await fetch(base + '/functions/v1/whatsapp-media-sync', {
