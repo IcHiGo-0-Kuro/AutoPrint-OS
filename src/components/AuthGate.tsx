@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { ArrowLeft, KeyRound, LogIn, Mail, ShieldCheck, UserPlus } from 'lucide-react';
+import { ArrowLeft, KeyRound, LogIn, ShieldCheck, UserPlus } from 'lucide-react';
 import {
   isSupabaseConfigured,
   sendPasswordRecoveryCode,
