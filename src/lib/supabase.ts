@@ -1,5 +1,10 @@
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+const configuredUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const configuredKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+
+// The publishable key is intended for client/desktop builds.
+// Environment variables can still override these defaults for development or another deployment.
+const url = (configuredUrl || 'https://ngdbwujpfbsgzfwfmddq.supabase.co').replace(/\/$/, '');
+const key = configuredKey || 'sb_publishable_tKjMe7fU3yBzn3HwdbbNuw_W8xzdqv1';
 const STORAGE_KEY = 'autoprint.supabase.session';
 export type Session={access_token:string;refresh_token:string;expires_at?:number;user:{id:string;email?:string}};
 export function isSupabaseConfigured(){return Boolean(url&&key)}
