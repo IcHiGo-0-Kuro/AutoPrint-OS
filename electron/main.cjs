@@ -360,7 +360,7 @@ function registerIpc() {
 
   ipcMain.handle('files:importRemote', async (_, input) => {
     if (!input || typeof input !== 'object') throw new Error('Invalid document download request.');
-    return downloadRemoteFile(input.url, input.fileName, input.expectedSize, input.token);
+    return downloadRemoteFile(input.url, input.fileName, input.expectedSize, input.token, input.body);
   });
 
   ipcMain.handle('printers:list', () => new Promise((resolve, reject) => {
