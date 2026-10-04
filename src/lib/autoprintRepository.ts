@@ -38,7 +38,7 @@ function mapJob(row: any, printer: any, filePath: string): PrintJob {
     printCost: money(row.price), platformFee: money(row.platform_fee), totalAmount: money(row.total_amount || row.price), paymentStatus: row.payment === 'paid' ? 'paid' : row.payment === 'refunded' ? 'refunded' : 'unpaid',
     paymentMethod: row.payment_method || undefined, paymentTxnId: row.payment_transaction_id || undefined, jobStatus: uiJobStatus(row.status, row.hardcopy_status),
     printerId: row.printer_id || '', printerName: printer?.printer_name || 'Unassigned', currentPagePrinting: row.current_page_printing || undefined, totalPagesToPrint: Number(row.total_pages_to_print || row.document_page_count || 1),
-    traySlot: row.tray_slot || '', headerStamped: Boolean(row.header_stamped), separatorSheetIncluded: Boolean(row.separator_sheet_included), isStapled: Boolean(row.is_stapled), notes: row.notes || undefined,
+    traySlot: row.tray_slot || '', headerStamped: row.header_stamped ?? true, separatorSheetIncluded: row.separator_sheet_included ?? true, isStapled: Boolean(row.is_stapled), notes: row.notes || undefined,
     createdAt: new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), printedAt: row.printed_at ? new Date(row.printed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
     completedAt: row.completed_at ? new Date(row.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
   };
