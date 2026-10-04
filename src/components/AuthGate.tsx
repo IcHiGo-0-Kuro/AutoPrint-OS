@@ -12,7 +12,7 @@ import {
 type RecoveryStep = 'email' | 'code' | 'password';
 
 export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
-  const [mode, setMode] = useState<'sign_in' | 'sign_up'>('sign_in');
+  const [mode, setMode] = useState<'sign_in' | 'sign_up' | 'recover'>('sign_in');
   const [recoveryStep, setRecoveryStep] = useState<RecoveryStep>('email');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -107,14 +107,12 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
     <div className="flex items-center gap-3 mb-6"><LogIn className="w-7 h-7 text-indigo-400" /><div><h1 className="text-xl font-semibold">AutoPrint OS</h1><p className="text-xs text-slate-400">Sign in to your shop</p></div></div>
     <label className="block text-xs text-slate-400 mb-1">Email</label><input value={email} onChange={e=>setEmail(e.target.value)} type="email" required autoComplete="email" className="w-full mb-4 px-3 py-2.5 rounded-lg bg-slate-950 border border-slate-800 outline-none focus:border-indigo-500" />
     <label className="block text-xs text-slate-400 mb-1">Password</label><input value={password} onChange={e=>setPassword(e.target.value)} type="password" minLength={6} required autoComplete="current-password" className="w-full mb-2 px-3 py-2.5 rounded-lg bg-slate-950 border border-slate-800 outline-none focus:border-indigo-500" />
-    <button type="button" onClick={() => { setRecoveryStep('email'); setMode('sign_in'); setError(''); setNotice(''); }} className="mb-4 text-xs text-indigo-300 hover:text-indigo-200">Forgot password?</button>
+    <button type="button" onClick={() => { setRecoveryStep('email'); setMode('recover'); setError(''); setNotice(''); }} className="mb-4 text-xs text-indigo-300 hover:text-indigo-200">Forgot password?</button>
     {error && <div className="mb-4 text-xs text-red-300 bg-red-950/30 border border-red-900/50 rounded-lg p-3">{error}</div>}
     {notice && <div className="mb-4 text-xs text-emerald-300 bg-emerald-950/30 border border-emerald-900/50 rounded-lg p-3">{notice}</div>}
     <button disabled={busy} className="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 font-medium text-sm">{busy ? 'Connecting…' : 'Sign in'}</button>
     <button type="button" onClick={switchMode} className="w-full mt-3 py-2 text-xs text-slate-400 hover:text-white">Need an account? Create one</button>
   </form></div>;
-
-  if (mode === 'sign_in' && recoveryStep === 'email') return null;
 
   if (mode === 'sign_up') return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6"><form onSubmit={submit} className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-7 shadow-2xl">
     <div className="flex items-center gap-3 mb-6"><UserPlus className="w-7 h-7 text-indigo-400" /><div><h1 className="text-xl font-semibold">AutoPrint OS</h1><p className="text-xs text-slate-400">Create your shop account</p></div></div>
