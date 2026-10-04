@@ -31,7 +31,7 @@ async function resolveLocalFilePath(row: any): Promise<string> {
 
 function mapJob(row: any, printer: any, filePath: string): PrintJob {
   return {
-    id: row.id, localFileId: row.local_file_id || undefined, tokenNumber: row.token_number || `JOB-${row.id.slice(0, 6).toUpperCase()}`, customerName: row.customer_name || 'Customer', customerPhone: row.customer_phone || '',
+    id: row.id, localFileId: row.local_file_id || undefined, tokenNumber: row.print_token || row.token_number || `JOB-${row.id.slice(0, 6).toUpperCase()}`, shortNumber: row.short_number || undefined, customerName: row.customer_name || 'Customer', customerPhone: row.customer_phone || '',
     fileName: row.document_name || row.local_file_name || 'Document', fileSize: formatSize(row.document_size_bytes), fileType: ((row.document_mime_type || '').split('/').pop() || 'pdf') as PrintJob['fileType'],
     localFilePath: filePath, pageCount: Number(row.document_page_count || row.pages_per_copy || 1), copies: Number(row.copies || row.print_count || 1),
     colorMode: row.color_mode === 'color' ? 'color' : 'bw', duplex: row.sides === 'double' ? 'duplex' : 'single', pagesPerSide: (row.pages_per_side || 1) as PrintJob['pagesPerSide'], orientation: row.orientation || 'portrait', pageRange: row.page_range || 'all',
@@ -125,6 +125,10 @@ export async function enqueueNativePrint(job: PrintJob) {
     localFileId: job.localFileId,
     printerName: job.printerName,
     copies: job.copies,
+    shortNumber: job.shortNumber,
+    printToken: job.tokenNumber,
+    headerStampEnabled: job.headerStamped !== false,
+    separatorSheetEnabled: job.separatorSheetIncluded !== false,
   });
 }
 
