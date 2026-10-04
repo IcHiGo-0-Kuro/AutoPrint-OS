@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
 const isDev = !app.isPackaged;
 let mainWindow;
@@ -175,6 +176,91 @@ function executeWindowsPrint(job) {
   });
 }
 
+async function stampPdfFirstPage(sourcePath, destinationPath, shortNumber) {
+  const bytes = fs.readFileSync(sourcePath);
+  const pdf = await PDFDocument.load(bytes, { ignoreEncryption: false });
+  const pages = pdf.getPages();
+  if (!pages.length) throw new Error('PDF contains no printable pages.');
+  const page = pages[0];
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const size = 7;
+  const text = '#' + String(shortNumber || '').replace(/[^0-9A-Za-z-]/g, '');
+  if (!text || text === '#') throw new Error('No short order number is available for the print marker.');
+  const width = font.widthOfTextAtSize(text, size);
+  const margin = 8;
+  page.drawText(text, {
+    x: Math.max(margin, page.getWidth() - width - margin),
+    y: Math.max(margin, page.getHeight() - size - margin),
+    size,
+    font,
+    color: rgb(0.45, 0.45, 0.45),
+    opacity: 0.72,
+  });
+  fs.writeFileSync(destinationPath, await pdf.save());
+}
+
+async function createSeparatorPdf(job) {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([612, 792]);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const shortNumber = String(job.shortNumber || '----');
+  const token = String(job.printToken || 'PRINTOMATIC');
+  const lines = [
+    { text: 'PRINTOMATIC', font: bold, size: 18 },
+    { text: 'ORDER #' + shortNumber, font: bold, size: 15 },
+    { text: 'Token: ' + token, font, size: 8 },
+    { text: 'Copies: ' + String(job.copies || 1), font, size: 8 },
+    { text: 'READY FOR PICKUP IDENTIFICATION', font: bold, size: 9 },
+  ];
+  let y = 650;
+  for (const line of lines) {
+    const width = line.font.widthOfTextAtSize(line.text, line.size);
+    page.drawText(line.text, {
+      x: (612 - width) / 2,
+      y,
+      size: line.size,
+      font: line.font,
+      color: rgb(0.25, 0.25, 0.25),
+    });
+    y -= line.size + 18;
+  }
+  page.drawLine({ start: { x: 90, y: 590 }, end: { x: 522, y: 590 }, thickness: 0.7, color: rgb(0.75, 0.75, 0.75) });
+  page.drawLine({ start: { x: 90, y: 465 }, end: { x: 522, y: 465 }, thickness: 0.7, color: rgb(0.75, 0.75, 0.75) });
+  const filePath = path.join(app.getPath('temp'), 'printomatic-' + job.id + '-separator.pdf');
+  fs.writeFileSync(filePath, await pdf.save());
+  return filePath;
+}
+
+async function preparePrintFile(job, sourcePath) {
+  const extension = path.extname(sourcePath).toLowerCase();
+  if (!job.headerStampEnabled || extension !== '.pdf') {
+    return { path: sourcePath, temporary: false, headerStampApplied: false };
+  }
+  const destinationPath = path.join(app.getPath('temp'), 'printomatic-' + job.id + '-stamped.pdf');
+  await stampPdfFirstPage(sourcePath, destinationPath, job.shortNumber);
+  return { path: destinationPath, temporary: true, headerStampApplied: true };
+}
+
+async function executePrintSequence(job, sourcePath) {
+  const prepared = await preparePrintFile(job, sourcePath);
+  let separatorPath = null;
+  try {
+    await executeWindowsPrint({ ...job, path: prepared.path });
+    if (job.separatorSheetEnabled) {
+      separatorPath = await createSeparatorPdf(job);
+      await executeWindowsPrint({ ...job, path: separatorPath, copies: 1 });
+    }
+    return { headerStampApplied: prepared.headerStampApplied, separatorPrinted: Boolean(separatorPath) };
+  } finally {
+    for (const temporaryPath of [prepared.temporary ? prepared.path : null, separatorPath]) {
+      if (temporaryPath) {
+        try { fs.rmSync(temporaryPath, { force: true }); } catch {}
+      }
+    }
+  }
+}
+
 async function processPrintQueue() {
   if (queueProcessing) return;
   queueProcessing = true;
@@ -189,13 +275,15 @@ async function processPrintQueue() {
       writePrintQueue(jobs);
       try {
         const file = resolveRegisteredFile(job.localFileId);
-        await executeWindowsPrint({ ...job, path: file.path });
+        const result = await executePrintSequence(job, file.path);
         const latest = readPrintQueue();
         const current = latest.find(item => item.id === job.id);
         if (current) {
           current.status = 'completed';
           current.completedAt = new Date().toISOString();
           current.error = null;
+          current.headerStampApplied = result.headerStampApplied;
+          current.separatorPrinted = result.separatorPrinted;
           writePrintQueue(latest);
         }
       } catch (error) {
@@ -279,12 +367,18 @@ function registerIpc() {
       localFileId: input.localFileId,
       printerName: input.printerName,
       copies: Math.max(1, Math.min(99, Number(input.copies) || 1)),
+      shortNumber: typeof input.shortNumber === 'string' ? input.shortNumber.slice(0, 12) : '',
+      printToken: typeof input.printToken === 'string' ? input.printToken.slice(0, 64) : '',
+      headerStampEnabled: input.headerStampEnabled !== false,
+      separatorSheetEnabled: input.separatorSheetEnabled !== false,
       fileName: file.name,
       status: 'queued',
       queuedAt: new Date().toISOString(),
       startedAt: null,
       completedAt: null,
       error: null,
+      headerStampApplied: false,
+      separatorPrinted: false,
     };
     jobs.push(job);
     writePrintQueue(jobs);
