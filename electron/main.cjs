@@ -33,6 +33,25 @@ function getOrCreateDeviceId() {
   return registry.deviceId;
 }
 
+async function downloadRemoteFile(url, suggestedName, expectedSize) {
+  if (typeof url !== 'string' || !url.startsWith('https://')) throw new Error('Only HTTPS document downloads are allowed.');
+  const response = await fetch(url, { redirect: 'follow' });
+  if (!response.ok) throw new Error('Document download failed with HTTP ' + response.status + '.');
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  const maxBytes = 50 * 1024 * 1024;
+  if (contentLength > maxBytes || Number(expectedSize || 0) > maxBytes) throw new Error('Document exceeds the 50 MB desktop limit.');
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length > maxBytes) throw new Error('Document exceeds the 50 MB desktop limit.');
+  const safeName = String(suggestedName || 'whatsapp-document').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+/, '').slice(0, 160) || 'whatsapp-document';
+  const inbox = path.join(app.getPath('userData'), 'printomatic-inbox');
+  fs.mkdirSync(inbox, { recursive: true });
+  const destination = path.join(inbox, crypto.randomUUID() + '-' + safeName);
+  const temp = destination + '.tmp';
+  fs.writeFileSync(temp, bytes);
+  fs.renameSync(temp, destination);
+  return registerLocalFile(destination);
+}
+
 function registerLocalFile(filePath) {
   if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('Invalid file path.');
   const absolutePath = path.resolve(filePath);
@@ -337,6 +356,11 @@ function registerIpc() {
     const record = Object.values(registry.files || {}).find(file => file?.localFileId === localFileId);
     if (!record) return null;
     return { localFileId: record.localFileId, path: record.path, name: record.name, size: record.size, modifiedAt: record.modifiedAt, fingerprint: record.fingerprint };
+  });
+
+  ipcMain.handle('files:download', async (_, input) => {
+    if (!input || typeof input !== 'object') throw new Error('Invalid document download request.');
+    return downloadRemoteFile(input.url, input.fileName, input.expectedSize);
   });
 
   ipcMain.handle('printers:list', () => new Promise((resolve, reject) => {
