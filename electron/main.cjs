@@ -358,7 +358,7 @@ function registerIpc() {
     return { localFileId: record.localFileId, path: record.path, name: record.name, size: record.size, modifiedAt: record.modifiedAt, fingerprint: record.fingerprint };
   });
 
-  ipcMain.handle('files:download', async (_, input) => {
+  ipcMain.handle('files:importRemote', async (_, input) => {
     if (!input || typeof input !== 'object') throw new Error('Invalid document download request.');
     return downloadRemoteFile(input.url, input.fileName, input.expectedSize);
   });
