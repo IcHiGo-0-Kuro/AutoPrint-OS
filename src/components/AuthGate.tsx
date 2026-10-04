@@ -1,7 +1,8 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { ArrowLeft, KeyRound, LogIn, ShieldCheck, UserPlus } from 'lucide-react';
 import {
   isSupabaseConfigured,
+  restoreRecoverySessionFromUrl,
   sendPasswordRecoveryCode,
   signIn,
   signUp,
@@ -22,6 +23,31 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    try {
+      const session = restoreRecoverySessionFromUrl();
+      if (session) {
+        setEmail(session.user.email || '');
+        setMode('recover');
+        setRecoveryStep('password');
+        setNotice('Recovery link verified. Choose a new password below.');
+        return;
+      }
+
+      const hash = window.location.hash;
+      if (hash.includes('error=') || hash.includes('error_description=')) {
+        const params = new URLSearchParams(hash.replace(/^#/, ''));
+        const description = params.get('error_description');
+        if (description) setError(decodeURIComponent(description.replace(/\+/g, ' ')));
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start password recovery.');
+    }
+  }, []);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -45,9 +71,9 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
     try {
       await sendPasswordRecoveryCode(email.trim());
       setRecoveryStep('code');
-      setNotice('If an account exists for this email, a recovery code has been sent. Check your inbox and spam folder.');
+      setNotice('If an account exists for this email, a recovery email has been sent. Open it and follow the reset instructions.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send the recovery code.');
+      setError(err instanceof Error ? err.message : 'Could not send the recovery email.');
     } finally { setBusy(false); }
   };
 
@@ -55,9 +81,10 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
     event.preventDefault();
     setBusy(true); setError(''); setNotice('');
     try {
-      await verifyPasswordRecoveryCode(email.trim(), recoveryCode.trim());
+      const session = await verifyPasswordRecoveryCode(email.trim(), recoveryCode.trim());
+      setEmail(session.user.email || email.trim());
       setRecoveryStep('password');
-      setNotice('Code verified. Choose a new password.');
+      setNotice('Recovery code verified. Choose a new password.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That recovery code is invalid or expired.');
     } finally { setBusy(false); }
@@ -76,7 +103,6 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
     }
     try {
       await updatePassword(newPassword);
-      // Do not leave the recovery session as the normal app session.
       localStorage.removeItem('autoprint.supabase.session');
       setRecoveryStep('email');
       setMode('sign_in');
@@ -126,10 +152,10 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
 
   const recoveryTitle = recoveryStep === 'email' ? 'Recover your password' : recoveryStep === 'code' ? 'Enter recovery code' : 'Set a new password';
   const recoverySubtitle = recoveryStep === 'email'
-    ? 'We will send a one-time recovery code to your registered email.'
+    ? 'We will send a recovery email to your registered address.'
     : recoveryStep === 'code'
       ? `Enter the code sent to ${email}.`
-      : 'Your recovery code has been verified. Choose a new password.';
+      : 'Your recovery session is verified. Choose a new password.';
 
   return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6"><form onSubmit={recoveryStep === 'email' ? requestRecovery : recoveryStep === 'code' ? verifyCode : saveNewPassword} className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-7 shadow-2xl">
     <div className="flex items-center gap-3 mb-6"><KeyRound className="w-7 h-7 text-indigo-400" /><div><h1 className="text-xl font-semibold">{recoveryTitle}</h1><p className="text-xs text-slate-400">{recoverySubtitle}</p></div></div>
@@ -142,7 +168,7 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
     {recoveryStep === 'code' && <>
       <label className="block text-xs text-slate-400 mb-1">Recovery code</label>
       <input value={recoveryCode} onChange={e=>setRecoveryCode(e.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" autoComplete="one-time-code" required className="w-full mb-2 px-3 py-2.5 rounded-lg bg-slate-950 border border-slate-800 outline-none focus:border-indigo-500 tracking-[0.35em] text-center text-lg" />
-      <button type="button" disabled={busy} onClick={requestRecovery} className="mb-4 text-xs text-indigo-300 hover:text-indigo-200 disabled:opacity-50">Resend code</button>
+      <button type="button" disabled={busy} onClick={requestRecovery} className="mb-4 text-xs text-indigo-300 hover:text-indigo-200 disabled:opacity-50">Resend recovery email</button>
     </>}
 
     {recoveryStep === 'password' && <>
@@ -154,7 +180,7 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
 
     {error && <div className="mb-4 text-xs text-red-300 bg-red-950/30 border border-red-900/50 rounded-lg p-3">{error}</div>}
     {notice && <div className="mb-4 text-xs text-emerald-300 bg-emerald-950/30 border border-emerald-900/50 rounded-lg p-3">{notice}</div>}
-    <button disabled={busy} className="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 font-medium text-sm">{busy ? 'Please wait…' : recoveryStep === 'email' ? 'Send recovery code' : recoveryStep === 'code' ? 'Verify code' : 'Change password'}</button>
+    <button disabled={busy} className="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 font-medium text-sm">{busy ? 'Please wait…' : recoveryStep === 'email' ? 'Send recovery email' : recoveryStep === 'code' ? 'Verify code' : 'Change password'}</button>
     <button type="button" onClick={startSignIn} className="w-full mt-3 py-2 text-xs text-slate-400 hover:text-white flex items-center justify-center gap-2"><ArrowLeft className="w-3.5 h-3.5" />Back to sign in</button>
   </form></div>;
 }
