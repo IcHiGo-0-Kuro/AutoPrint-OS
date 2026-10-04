@@ -94,14 +94,3 @@ drop trigger if exists print_jobs_assign_printomatic_identity on public.print_jo
 create trigger print_jobs_assign_printomatic_identity
 before insert on public.print_jobs
 for each row execute function public.assign_print_job_identity();
-
--- Existing rows get stable identifiers on the next update/insert without rewriting customer data here.
-update public.whatsapp_orders
-set token_number = coalesce(token_number, 'PM-' || upper(substr(replace(id::text, '-', ''), 1, 10))),
-    short_number = coalesce(short_number, lpad((abs(('x' || substr(md5(id::text), 1, 8))::bit(32)::bigint) % 10000)::text, 4, '0'))
-where token_number is null or short_number is null;
-
-update public.print_jobs
-set print_token = coalesce(print_token, token_number, 'PM-' || upper(substr(replace(id::text, '-', ''), 1, 10))),
-    short_number = coalesce(short_number, lpad((abs(('x' || substr(md5(id::text), 1, 8))::bit(32)::bigint) % 10000)::text, 4, '0'))
-where print_token is null or short_number is null;
