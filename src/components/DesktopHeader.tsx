@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, Command, Maximize2, MessageSquare, Printer, Volume2, VolumeX, Wifi } from 'lucide-react';
+import { Bell, Command, Maximize2, Printer, Volume2, VolumeX, Wifi } from 'lucide-react';
 import { soundManager } from '../utils/audio';
 
 type P = { shopName: string; isWhatsAppConnected: boolean; activeJobsCount: number };
