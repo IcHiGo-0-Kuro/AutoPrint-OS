@@ -1,1 +1,22 @@
-import {MessageSquare,Wifi,Smartphone} from 'lucide-react';import {ShopProfile} from '../types';type P={shopProfile:ShopProfile;onOpenTestStudentChat:()=>void;onToggleWhatsAppConnection:()=>void};export function WhatsAppHub(p:P){return <div className="space-y-5"><div><h1 className="text-xl font-bold">WhatsApp Bot Hub</h1><p className="text-xs text-slate-400">Cloud intake and customer conversation layer.</p></div><div className="grid md:grid-cols-2 gap-4"><div className="bg-slate-900 border border-slate-800 rounded-xl p-6"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-emerald-950 flex items-center justify-center"><MessageSquare className="text-emerald-400"/></div><div><b>WhatsApp connection</b><p className="text-xs text-slate-400">{p.shopProfile.whatsappNumber||'No number configured'}</p></div></div><div className="mt-5 flex items-center gap-2 text-xs"><Wifi className={p.shopProfile.isWhatsAppConnected?'text-emerald-400':'text-amber-400'}/>{p.shopProfile.isWhatsAppConnected?'Connected':'Disconnected'}</div><button onClick={p.onToggleWhatsAppConnection} className="mt-4 px-3 py-2 bg-slate-800 rounded text-xs">Toggle connection</button></div><div className="bg-slate-900 border border-slate-800 rounded-xl p-6"><Smartphone className="text-indigo-400"/><h3 className="mt-3 font-semibold">Test student flow</h3><p className="text-xs text-slate-400 mt-1">Run the local simulator without sending a real message.</p><button onClick={p.onOpenTestStudentChat} className="mt-4 px-3 py-2 bg-indigo-600 rounded text-xs">Open simulator</button></div></div></div>;}
+import { MessageSquare, Wifi, ShieldCheck, Webhook } from 'lucide-react';
+import { ShopProfile } from '../types';
+
+type P = { shopProfile: ShopProfile; onToggleWhatsAppConnection: () => void };
+
+export function WhatsAppHub(p: P) {
+  return <div className="space-y-6">
+    <div><div className="autoprint-eyebrow">OPERATIONS</div><h1 className="text-2xl font-bold tracking-tight">WhatsApp Bot Hub</h1><p className="text-sm text-slate-400 mt-1">Manage the cloud intake and customer conversation layer. The production flow stays separate from the desktop print engine.</p></div>
+    <div className="grid md:grid-cols-2 gap-5">
+      <div className="autoprint-panel p-6">
+        <div className="flex items-center gap-3"><div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center"><MessageSquare className="text-emerald-400" /></div><div><b>WhatsApp connection</b><p className="text-xs text-slate-400 mt-0.5">{p.shopProfile.whatsappNumber || 'No number configured'}</p></div></div>
+        <div className="mt-6 flex items-center gap-2 text-xs"><span className={`w-2 h-2 rounded-full ${p.shopProfile.isWhatsAppConnected ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.55)]' : 'bg-amber-400'}`} />{p.shopProfile.isWhatsAppConnected ? 'Connected and ready' : 'Not connected'}</div>
+        <button onClick={p.onToggleWhatsAppConnection} className="mt-5 px-4 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium transition-colors">{p.shopProfile.isWhatsAppConnected ? 'Disconnect' : 'Connect WhatsApp'}</button>
+      </div>
+      <div className="autoprint-panel p-6">
+        <div className="flex items-center gap-3"><div className="w-11 h-11 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center"><Webhook className="text-indigo-400" /></div><div><b>Production webhook</b><p className="text-xs text-slate-400 mt-0.5">Cloud-controlled intake endpoint</p></div></div>
+        <div className="mt-5 space-y-3 text-xs text-slate-400"><div className="flex gap-2"><ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />Customer messages stay in the cloud workflow.</div><div className="flex gap-2"><Wifi className="w-4 h-4 text-indigo-400 shrink-0" />Paid jobs can flow into the desktop queue without a simulator.</div></div>
+        <div className="mt-5 px-3 py-2.5 rounded-lg bg-slate-950/70 border border-slate-800 text-[11px] text-slate-500">Real provider/webhook integration is the next production layer.</div>
+      </div>
+    </div>
+  </div>;
+}
