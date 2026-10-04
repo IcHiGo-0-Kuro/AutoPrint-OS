@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Building2, ChevronLeft, ChevronRight, CircleHelp, Gauge, ListOrdered, MessageSquare, Moon, Palette, Printer, Settings, Sliders, Sun, Wallet, Cpu } from 'lucide-react';
+import { Building2, ChevronLeft, ChevronRight, CircleHelp, ListOrdered, MessageSquare, Palette, Printer, Settings, Sliders, Wallet, Cpu } from 'lucide-react';
 import { ShopProfile } from '../types';
 import { formatINRCompact } from '../utils/format';
 
