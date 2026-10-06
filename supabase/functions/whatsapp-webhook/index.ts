@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getWhatsAppProvider } from "../_shared/whatsapp-provider.ts";
+import { getWhatsAppProvider } from "./provider.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -64,7 +64,7 @@ function isNo(value: string) {
 }
 
 async function sendProviderText(phoneNumberId: string, to: string, body: string, conversationId?: string) {
-  const sent = await whatsappProvider.sendProviderText(phoneNumberId, to, body);
+  const sent = await whatsappProvider.sendText(phoneNumberId, to, body);
   if (!sent) return false;
   if (conversationId) {
     const result = await supabase.from("whatsapp_messages").insert({
