@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getWhatsAppProvider } from "../_shared/whatsapp-provider.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -7,6 +8,7 @@ const supabase = createClient(
 );
 
 const verifyToken = Deno.env.get("WHATSAPP_VERIFY_TOKEN") || "";
+const whatsappProvider = getWhatsAppProvider();
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -61,45 +63,16 @@ function isNo(value: string) {
   return ["no", "n", "wrong", "change", "edit"].includes(normalizeOption(value));
 }
 
-function firstMessage(payload: any) {
-  for (const entry of payload?.entry || []) {
-    for (const change of entry?.changes || []) {
-      const value = change?.value;
-      const metadata = value?.metadata;
-      const message = value?.messages?.[0];
-      if (message) return { message, metadata };
-    }
-  }
-  return null;
-}
-
-async function sendText(phoneNumberId: string, to: string, body: string, conversationId?: string) {
-  const token = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
-  if (!token) return false;
-
-  const response = await fetch(`https://graph.facebook.com/v23.0/${phoneNumberId}/messages`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to,
-      type: "text",
-      text: { body },
-    }),
-  });
-
-  if (!response.ok) {
-    console.error("WhatsApp send failed", await response.text());
-    return false;
-  }
-
+async function sendProviderText(phoneNumberId: string, to: string, body: string, conversationId?: string) {
+  const sent = await whatsappProvider.sendProviderText(phoneNumberId, to, body);
+  if (!sent) return false;
   if (conversationId) {
     const result = await supabase.from("whatsapp_messages").insert({
       conversation_id: conversationId,
       direction: "outbound",
       message_type: "text",
       text_body: body,
-      metadata: { provider: "meta_cloud_api" },
+      metadata: { provider: whatsappProvider.name },
     });
     if (result.error) console.error("Could not log outbound WhatsApp message", result.error);
   }
@@ -117,7 +90,7 @@ async function sendNextQuestion(phoneNumberId: string, customerNumber: string, c
     awaiting_confirmation: "Please reply CONFIRM to place this order, or CHANGE to edit the options.",
   };
   const body = prompts[step] || prompts.awaiting_document;
-  await sendText(phoneNumberId, customerNumber, body, conversationId);
+  await sendProviderText(phoneNumberId, customerNumber, body, conversationId);
 }
 
 function confirmationText(order: any) {
@@ -147,7 +120,7 @@ Deno.serve(async (request) => {
 
   try {
     const payload = await request.json();
-    const incoming = firstMessage(payload);
+    const incoming = whatsappProvider.extractIncoming(payload);
     if (!incoming) return json({ ok: true, ignored: true });
 
     const { message, metadata } = incoming;
@@ -266,7 +239,7 @@ Deno.serve(async (request) => {
         mime_type: media?.mime_type || null,
         size_bytes: media?.file_size || null,
         intake_status: "awaiting_desktop_import",
-        metadata: { provider: "meta_cloud_api", message_id: message.id, sha256: media?.sha256 || null },
+        metadata: { provider: whatsappProvider.name, message_id: message.id, sha256: media?.sha256 || null },
       });
       if (docError) throw docError;
 
@@ -283,7 +256,7 @@ Deno.serve(async (request) => {
         nextStep = "awaiting_document";
       } else if (nextStep === "awaiting_name") {
         if (textBody.length < 2 || textBody.length > 80) {
-          await sendText(phoneNumberId, customerNumber, "Please send the customer name (2–80 characters).", conversation.id);
+          await sendProviderText(phoneNumberId, customerNumber, "Please send the customer name (2–80 characters).", conversation.id);
           return json({ ok: true, order_id: order.id, step: nextStep });
         }
         await supabase.from("whatsapp_orders").update({ customer_name: textBody, intake_step: "awaiting_copies" }).eq("id", order.id);
@@ -291,7 +264,7 @@ Deno.serve(async (request) => {
       } else if (nextStep === "awaiting_copies") {
         const copies = parsePositiveInt(textBody);
         if (!copies) {
-          await sendText(phoneNumberId, customerNumber, "Please reply with the number of copies, for example: 2", conversation.id);
+          await sendProviderText(phoneNumberId, customerNumber, "Please reply with the number of copies, for example: 2", conversation.id);
           return json({ ok: true, order_id: order.id, step: nextStep });
         }
         await supabase.from("whatsapp_orders").update({ copies, intake_step: "awaiting_color" }).eq("id", order.id);
@@ -299,7 +272,7 @@ Deno.serve(async (request) => {
       } else if (nextStep === "awaiting_color") {
         const color = parseColor(textBody);
         if (!color) {
-          await sendText(phoneNumberId, customerNumber, "Please reply B&W or Color.", conversation.id);
+          await sendProviderText(phoneNumberId, customerNumber, "Please reply B&W or Color.", conversation.id);
           return json({ ok: true, order_id: order.id, step: nextStep });
         }
         await supabase.from("whatsapp_orders").update({ color_mode: color, intake_step: "awaiting_paper" }).eq("id", order.id);
@@ -307,7 +280,7 @@ Deno.serve(async (request) => {
       } else if (nextStep === "awaiting_paper") {
         const paper = parsePaper(textBody);
         if (!paper) {
-          await sendText(phoneNumberId, customerNumber, "Please reply with A4, A3, A5, Letter, or Legal.", conversation.id);
+          await sendProviderText(phoneNumberId, customerNumber, "Please reply with A4, A3, A5, Letter, or Legal.", conversation.id);
           return json({ ok: true, order_id: order.id, step: nextStep });
         }
         await supabase.from("whatsapp_orders").update({ paper_size: paper, intake_step: "awaiting_sides" }).eq("id", order.id);
@@ -315,7 +288,7 @@ Deno.serve(async (request) => {
       } else if (nextStep === "awaiting_sides") {
         const sides = parseSides(textBody);
         if (!sides) {
-          await sendText(phoneNumberId, customerNumber, "Please reply Single-sided or Double-sided.", conversation.id);
+          await sendProviderText(phoneNumberId, customerNumber, "Please reply Single-sided or Double-sided.", conversation.id);
           return json({ ok: true, order_id: order.id, step: nextStep });
         }
         await supabase.from("whatsapp_orders").update({ sides, intake_step: "awaiting_confirmation" }).eq("id", order.id);
@@ -331,14 +304,14 @@ Deno.serve(async (request) => {
             current_step: "confirmed",
             last_message_at: new Date().toISOString(),
           }).eq("id", conversation.id);
-          await sendText(phoneNumberId, customerNumber, `Order #${order.short_number || "----"} confirmed. Keep this number for pickup. Your Printomatic order is ready for the next quote/payment stage.`, conversation.id);
+          await sendProviderText(phoneNumberId, customerNumber, `Order #${order.short_number || "----"} confirmed. Keep this number for pickup. Your Printomatic order is ready for the next quote/payment stage.`, conversation.id);
           return json({ ok: true, order_id: order.id, step: "confirmed" });
         }
         if (isNo(textBody)) {
           await supabase.from("whatsapp_orders").update({ intake_step: "awaiting_copies" }).eq("id", order.id);
           nextStep = "awaiting_copies";
         } else {
-          await sendText(phoneNumberId, customerNumber, "Reply CONFIRM to place the order, or CHANGE to edit the print options.", conversation.id);
+          await sendProviderText(phoneNumberId, customerNumber, "Reply CONFIRM to place the order, or CHANGE to edit the print options.", conversation.id);
           return json({ ok: true, order_id: order.id, step: nextStep });
         }
       }
@@ -356,7 +329,7 @@ Deno.serve(async (request) => {
     if (refreshed.error) throw refreshed.error;
 
     if (nextStep === "awaiting_confirmation") {
-      await sendText(phoneNumberId, customerNumber, confirmationText(refreshed.data), conversation.id);
+      await sendProviderText(phoneNumberId, customerNumber, confirmationText(refreshed.data), conversation.id);
     } else {
       await sendNextQuestion(phoneNumberId, customerNumber, conversation.id, nextStep);
     }
