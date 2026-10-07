@@ -71,7 +71,7 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
     try {
       await sendPasswordRecoveryCode(email.trim());
       setRecoveryStep('code');
-      setNotice('If an account exists for this email, a recovery email has been sent. Open it and follow the reset instructions.');
+      setNotice('If an account exists for this email, a recovery email has been sent. Enter the one-time code from that email below.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send the recovery email.');
     } finally { setBusy(false); }
@@ -86,7 +86,7 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
       setRecoveryStep('password');
       setNotice('Recovery code verified. Choose a new password.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'That recovery code is invalid or expired.');
+      setError(err instanceof Error ? err.message : 'That recovery code is invalid or expired. Request a new code and try again.');
     } finally { setBusy(false); }
   };
 
@@ -154,7 +154,7 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
   const recoverySubtitle = recoveryStep === 'email'
     ? 'We will send a recovery email to your registered address.'
     : recoveryStep === 'code'
-      ? `Enter the code sent to ${email}.`
+      ? `Enter the 6-digit code sent to ${email}.`
       : 'Your recovery session is verified. Choose a new password.';
 
   return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6"><form onSubmit={recoveryStep === 'email' ? requestRecovery : recoveryStep === 'code' ? verifyCode : saveNewPassword} className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-7 shadow-2xl">
@@ -167,7 +167,7 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
 
     {recoveryStep === 'code' && <>
       <label className="block text-xs text-slate-400 mb-1">Recovery code</label>
-      <input value={recoveryCode} onChange={e=>setRecoveryCode(e.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" autoComplete="one-time-code" required className="w-full mb-2 px-3 py-2.5 rounded-lg bg-slate-950 border border-slate-800 outline-none focus:border-indigo-500 tracking-[0.35em] text-center text-lg" />
+      <input value={recoveryCode} onChange={e=>setRecoveryCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" required className="w-full mb-2 px-3 py-2.5 rounded-lg bg-slate-950 border border-slate-800 outline-none focus:border-indigo-500 tracking-[0.45em] text-center text-lg" />
       <button type="button" disabled={busy} onClick={requestRecovery} className="mb-4 text-xs text-indigo-300 hover:text-indigo-200 disabled:opacity-50">Resend recovery email</button>
     </>}
 
