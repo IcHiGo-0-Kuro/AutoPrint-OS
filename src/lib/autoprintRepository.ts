@@ -84,7 +84,8 @@ export async function loadWorkspace(): Promise<{ shop: ShopProfile; printers: Pr
     automationSettings: { autoSpoolEnabled: s.auto_spool_enabled ?? true, headerStampEnabled: s.header_stamp_enabled ?? true, headerStampFontSize: Number(s.header_stamp_font_size ?? 8), headerStampFormat: s.header_stamp_format || 'AutoPrint Token #{TOKEN} · {CUSTOMER_NAME} · {PHONE_LAST4}', separatorSheetEnabled: s.separator_sheet_enabled ?? true, autoNotifyOnComplete: s.auto_notify_on_complete ?? true, soundAlerts: s.sound_alerts ?? true },
     subscription: { plan: 'pro', status: 'active', nextBillingDate: '', prepaidWalletBalance: 0, lifetimePlatformFeePaid: 0, totalOrdersHandled: jobRows.length }
   };
-  const jobs = await Promise.all(jobRows.map(async (job) => mapJob(job, printerRows.find(p => p.id === job.printer_id), await resolveLocalFilePath(job))));
+  const defaultPrinter = printerRows.find(p => p.is_active !== false && String(p.status || '').toLowerCase() !== 'offline') || printerRows[0];
+  const jobs = await Promise.all(jobRows.map(async (job) => mapJob(job, printerRows.find(p => p.id === job.printer_id) || defaultPrinter, await resolveLocalFilePath(job))));
   return { shop: profile, printers: printerRows.map(p => mapPrinter(p, statusRows.find(st => st.printer_id === p.id))), jobs };
 }
 export async function syncWhatsAppDocuments() {
@@ -191,10 +192,60 @@ export async function saveSettings(shop: ShopProfile) {
   const row = { shop_id: shop.id, owner_name: shop.ownerName, college_campus: shop.collegeCampus, city: shop.city, whatsapp_number: shop.whatsappNumber, upi_vpa: shop.upiVpa, whatsapp_connected: shop.isWhatsAppConnected, bw_single: shop.rates.bwSingle, bw_duplex: shop.rates.bwDuplex, color_single: shop.rates.colorSingle, color_duplex: shop.rates.colorDuplex, auto_spool_enabled: shop.automationSettings.autoSpoolEnabled, header_stamp_enabled: shop.automationSettings.headerStampEnabled, header_stamp_font_size: shop.automationSettings.headerStampFontSize, header_stamp_format: shop.automationSettings.headerStampFormat, separator_sheet_enabled: shop.automationSettings.separatorSheetEnabled, auto_notify_on_complete: shop.automationSettings.autoNotifyOnComplete, sound_alerts: shop.automationSettings.soundAlerts };
   await db('/shop_settings?on_conflict=shop_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(row) }, session);
 }
-export async function createShop(name: string, city: string, campus: string) {
+export async function createShop(
+  name: string,
+  city: string,
+  campus: string,
+  ownerName: string,
+  whatsappNumber: string,
+  selectedPrinters: Array<{ name: string; driver: string; port: string; offline: boolean }>
+) {
   const session = getStoredSession(); if (!session) throw new Error('Not signed in.');
-  const shops = await db<any[]>('/shops', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ name, owner_id: session.user.id }) }, session);
+  const shops = await db<any[]>('/shops', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ name, owner_id: session.user.id })
+  }, session);
   const shop = shops[0]; if (!shop) throw new Error('Shop creation returned no shop.');
-  await db('/shop_members', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ shop_id: shop.id, user_id: session.user.id, role: 'owner' }) }, session);
-  await db('/shop_settings', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ shop_id: shop.id, city, college_campus: campus }) }, session);
+
+  await db('/shop_members', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ shop_id: shop.id, user_id: session.user.id, role: 'owner' })
+  }, session);
+
+  await db('/shop_settings', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      shop_id: shop.id,
+      owner_name: ownerName,
+      city,
+      college_campus: campus,
+      whatsapp_number: whatsappNumber,
+      whatsapp_connected: true,
+      auto_spool_enabled: true,
+      header_stamp_enabled: true,
+      header_stamp_font_size: 7,
+      header_stamp_format: 'Printomatic #{SHORT_NUMBER}',
+      separator_sheet_enabled: true,
+      auto_notify_on_complete: true,
+      sound_alerts: true
+    })
+  }, session);
+
+  for (const [index, printer] of selectedPrinters.entries()) {
+    await addPrinter(shop.id, {
+      id: `printer_${crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + index}`,
+      name: printer.name,
+      brand: printer.driver || 'Windows',
+      model: '',
+      connectionType: 'NETWORK_LAN',
+      ipOrPort: printer.port || '',
+      supportedModes: ['bw', 'color'],
+      status: printer.offline ? 'offline' : 'ready',
+      paperTraySheets: 0,
+      tonerLevelPercent: 100,
+    });
+  }
 }
