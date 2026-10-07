@@ -32,6 +32,7 @@ declare global {
           fingerprint: string;
           registeredAt: string;
         }>;
+        open: (filePath: string) => Promise<void>;
         resolve: (localFileId: string) => Promise<{
           localFileId: string;
           path: string;
