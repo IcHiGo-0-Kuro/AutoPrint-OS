@@ -14,7 +14,7 @@ import { soundManager } from './utils/audio';
 import { AuthGate } from './components/AuthGate';
 import { ShopSetupGate } from './components/ShopSetupGate';
 import { getStoredSession, signOut } from './lib/supabase';
-import { loadWorkspace, registerCurrentDevice, syncWhatsAppDocuments, enqueueNativePrint, reconcileNativePrintQueue, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
+import { loadWorkspace, registerCurrentDevice, syncWhatsAppDocuments, notifyNoPrinter, enqueueNativePrint, reconcileNativePrintQueue, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
 import { NativeAgentStatus } from './components/NativeAgentStatus';
 import { NativeFilePicker } from './components/NativeFilePicker';
 
@@ -80,8 +80,19 @@ export default function App() {
     const sync = async () => {
       try {
         const result = await syncWhatsAppDocuments();
-        if (active && result.failed > 0) {
+        if (!active) return;
+        if (result.failed > 0) {
           setWorkspaceError(`${result.failed} WhatsApp document import(s) failed; they will be retried.`);
+        }
+        if (result.documents.length && printers.length === 0) {
+          for (const document of result.documents) {
+            try {
+              if (document.path) await window.autoPrintNative.files.open(document.path);
+              await notifyNoPrinter(document.id);
+            } catch (error) {
+              if (active) setWorkspaceError(error instanceof Error ? error.message : 'Could not open the WhatsApp document.');
+            }
+          }
         }
       } catch (error) {
         if (active) setWorkspaceError(error instanceof Error ? error.message : 'WhatsApp document synchronization failed.');
@@ -94,7 +105,7 @@ export default function App() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [connectedToCloud, shopProfile.id]);
+  }, [connectedToCloud, shopProfile.id, printers.length]);
 
   useEffect(() => {
     if (!connectedToCloud || !window.autoPrintNative || !shopProfile.id) return;
