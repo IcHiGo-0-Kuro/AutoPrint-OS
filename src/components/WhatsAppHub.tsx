@@ -7,6 +7,7 @@ type P = { shopProfile: ShopProfile };
 
 export function WhatsAppHub({ shopProfile }: P) {
   const [phoneNumber, setPhoneNumber] = useState(shopProfile.whatsappNumber || '');
+  const [providerPhoneNumberId, setProviderPhoneNumberId] = useState('');
   const [connection, setConnection] = useState<WhatsAppConnection | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -24,9 +25,9 @@ export function WhatsAppHub({ shopProfile }: P) {
     setSaving(true);
     setMessage('');
     try {
-      const saved = await saveWhatsAppConnection(shopProfile.id, phoneNumber);
+      const saved = await saveWhatsAppConnection(shopProfile.id, phoneNumber, providerPhoneNumberId);
       setConnection(saved);
-      setMessage('WhatsApp number registered. The provider webhook can now be attached to this shop.');
+      setMessage('WhatsApp number registered. The Meta Phone Number ID is saved. Once Meta sends the first webhook, this shop will switch to connected.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not save the WhatsApp number.');
     } finally {
@@ -34,7 +35,7 @@ export function WhatsAppHub({ shopProfile }: P) {
     }
   };
 
-  const connected = connection?.status === 'connected' || shopProfile.isWhatsAppConnected;
+  const connected = connection?.status === 'connected';
 
   return <div className="space-y-6">
     <div>
@@ -49,10 +50,12 @@ export function WhatsAppHub({ shopProfile }: P) {
           <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center"><MessageSquare className="text-emerald-400" /></div>
           <div><b>Shop WhatsApp number</b><p className="text-xs text-slate-400 mt-0.5">Use international format, including country code.</p></div>
         </div>
-        <div className="mt-6 flex gap-3">
-          <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="+91 98765 43210" className="flex-1 rounded-xl bg-slate-950 border border-slate-700 px-4 py-3 text-sm outline-none focus:border-emerald-500" />
+        <div className="mt-6 grid md:grid-cols-[1fr_1fr_auto] gap-3">
+          <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="+91 98765 43210" className="rounded-xl bg-slate-950 border border-slate-700 px-4 py-3 text-sm outline-none focus:border-emerald-500" />
+          <input value={providerPhoneNumberId} onChange={(e) => setProviderPhoneNumberId(e.target.value)} placeholder="Meta Phone Number ID" className="rounded-xl bg-slate-950 border border-slate-700 px-4 py-3 text-sm outline-none focus:border-emerald-500" />
           <button onClick={connect} disabled={saving} className="px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-sm font-semibold transition-colors">{saving ? 'Saving…' : 'Register number'}</button>
         </div>
+        <p className="mt-2 text-[11px] text-slate-500">The Phone Number ID is the Meta Cloud API identifier, not the WhatsApp phone number.</p>
         <div className="mt-4 flex items-center gap-2 text-xs">
           <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
           {connected ? 'Webhook connection active' : connection ? 'Number saved · waiting for provider connection' : 'Not configured'}
