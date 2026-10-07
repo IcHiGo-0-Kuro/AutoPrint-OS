@@ -10,15 +10,24 @@ function handleRecoveryUrl(rawUrl) {
   if (typeof rawUrl !== 'string' || !rawUrl.startsWith(RECOVERY_PROTOCOL + '://auth/recovery')) return false;
   pendingRecoveryUrl = rawUrl;
   if (mainWindow && !mainWindow.isDestroyed()) {
-    const hash = rawUrl.includes('#') ? rawUrl.slice(rawUrl.indexOf('#')) : '';
-    const query = rawUrl.includes('?') ? rawUrl.slice(rawUrl.indexOf('?'), rawUrl.includes('#') ? rawUrl.indexOf('#') : rawUrl.length) : '';
-    const target = isDev
-      ? 'http://localhost:3000/' + query + hash
-      : 'file://' + path.join(__dirname, '../dist/index.html') + query + hash;
-    mainWindow.loadURL(target);
+    const hashIndex = rawUrl.indexOf('#');
+    const queryIndex = rawUrl.indexOf('?');
+    const hash = hashIndex >= 0 ? rawUrl.slice(hashIndex) : '';
+    const queryEnd = hashIndex >= 0 ? hashIndex : rawUrl.length;
+    const query = queryIndex >= 0 && queryIndex < queryEnd ? rawUrl.slice(queryIndex + 1, queryEnd) : '';
+    if (isDev) {
+      mainWindow.loadURL('http://localhost:3000/' + (query ? '?' + query : '') + hash);
+    } else {
+      mainWindow.loadFile(path.join(__dirname, '../dist/index.html'), { query: query ? Object.fromEntries(new URLSearchParams(query)) : undefined, hash: hash ? hash.slice(1) : undefined });
+    }
     mainWindow.focus();
   }
   return true;
+}
+
+function captureRecoveryUrl(commandLine) {
+  const url = commandLine.find(value => value.startsWith(RECOVERY_PROTOCOL + '://'));
+  return url ? handleRecoveryUrl(url) : false;
 }
 
 if (process.platform === 'win32') {
@@ -29,9 +38,9 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
+  captureRecoveryUrl(process.argv);
   app.on('second-instance', (_event, commandLine) => {
-    const url = commandLine.find(value => value.startsWith(RECOVERY_PROTOCOL + '://'));
-    if (url) handleRecoveryUrl(url);
+    captureRecoveryUrl(commandLine);
   });
 }
 const fs = require('fs');
