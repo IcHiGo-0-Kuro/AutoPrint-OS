@@ -21,11 +21,13 @@ export async function getWhatsAppConnection(shopId: string) {
   return rows[0] || null;
 }
 
-export async function saveWhatsAppConnection(shopId: string, phoneNumber: string) {
+export async function saveWhatsAppConnection(shopId: string, phoneNumber: string, providerPhoneNumberId: string) {
   const session = getStoredSession();
   if (!session) throw new Error('Not signed in.');
   const normalized = phoneNumber.replace(/[^0-9+]/g, '');
+  const providerId = providerPhoneNumberId.trim();
   if (normalized.length < 8) throw new Error('Enter a valid WhatsApp number including the country code.');
+  if (!providerId) throw new Error('Enter the Meta WhatsApp Phone Number ID from your WhatsApp app configuration.');
 
   const rows = await db<WhatsAppConnection[]>(
     '/whatsapp_connections?on_conflict=shop_id',
@@ -36,6 +38,7 @@ export async function saveWhatsAppConnection(shopId: string, phoneNumber: string
         shop_id: shopId,
         phone_number: normalized,
         provider: 'meta_cloud_api',
+        provider_phone_number_id: providerId,
         status: 'pending',
       }),
     },
