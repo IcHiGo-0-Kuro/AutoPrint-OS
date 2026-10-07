@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getWhatsAppProvider } from "../whatsapp-webhook/provider.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -155,6 +156,46 @@ Deno.serve(async (request) => {
       }
     }
     return json({ ok: true, print_job_id: printJobId });
+  }
+
+  if (action === "notify_no_printer") {
+    const documentId = String(body?.document_id || "");
+    const document = await getDocument(admin, documentId, shopIds);
+    if (!document) return json({ error: "Document not found." }, 404);
+
+    const { data: order, error: orderError } = await admin
+      .from("whatsapp_orders")
+      .select("id,customer_id,short_number")
+      .eq("id", document.order_id)
+      .maybeSingle();
+    if (orderError || !order) return json({ error: "WhatsApp order not found." }, 404);
+
+    const { data: customer } = await admin
+      .from("whatsapp_customers")
+      .select("whatsapp_number")
+      .eq("id", order.customer_id)
+      .maybeSingle();
+
+    const { data: connection } = await admin
+      .from("whatsapp_connections")
+      .select("provider_phone_number_id")
+      .eq("shop_id", document.shop_id)
+      .eq("status", "connected")
+      .maybeSingle();
+
+    if (!customer?.whatsapp_number || !connection?.provider_phone_number_id) {
+      return json({ error: "WhatsApp connection is not ready for this shop." }, 409);
+    }
+
+    const provider = getWhatsAppProvider();
+    const sent = await provider.sendText(
+      connection.provider_phone_number_id,
+      customer.whatsapp_number,
+      "No printer detected. Opening your document on the shop computer now."
+    );
+    if (!sent) return json({ error: "Could not send the WhatsApp printer notice." }, 502);
+
+    return json({ ok: true, notified: true, short_number: order.short_number || null });
   }
 
   if (action === "download") {
