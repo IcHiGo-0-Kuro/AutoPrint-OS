@@ -97,20 +97,20 @@ export async function refreshSession(){
   store(s);return s;
 }
 
-export async function sendPasswordRecoveryCode(email:string){
-  // Supabase deliberately returns success even when the address is not registered,
-  // preventing account enumeration. The Reset Password email may contain either
-  // {{ .ConfirmationURL }} (link flow) or {{ .Token }} (OTP flow).
-  await request('/auth/v1/recover',{method:'POST',body:JSON.stringify({email})});
+function getRecoveryRedirectUrl(){
+  if(typeof window==='undefined') return 'printomatic://auth/recovery';
+  return window.location.protocol === 'http:' || window.location.protocol === 'https:'
+    ? window.location.origin
+    : 'printomatic://auth/recovery';
 }
 
-export async function verifyPasswordRecoveryCode(email:string,token:string){
-  const s=sessionFrom(await request('/auth/v1/verify',{
+export async function sendPasswordRecoveryCode(email:string){
+  // Use Supabase's standard recovery-link flow. The redirect URL is sent explicitly
+  // so the recovery email returns to Printomatic instead of the Supabase dashboard.
+  await request('/auth/v1/recover',{
     method:'POST',
-    body:JSON.stringify({email,token,type:'recovery'})
-  }));
-  store(s);
-  return s;
+    body:JSON.stringify({email,redirect_to:getRecoveryRedirectUrl()})
+  });
 }
 
 export async function updatePassword(password:string){
