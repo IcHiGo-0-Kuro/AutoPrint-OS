@@ -1,4 +1,36 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+
+const RECOVERY_PROTOCOL = 'printomatic';
+let pendingRecoveryUrl = null;
+
+function handleRecoveryUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl.startsWith(RECOVERY_PROTOCOL + '://auth/recovery')) return false;
+  pendingRecoveryUrl = rawUrl;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const hash = rawUrl.includes('#') ? rawUrl.slice(rawUrl.indexOf('#')) : '';
+    const query = rawUrl.includes('?') ? rawUrl.slice(rawUrl.indexOf('?'), rawUrl.includes('#') ? rawUrl.indexOf('#') : rawUrl.length) : '';
+    const target = (isDev ? 'http://localhost:3000/' : 'file://' + path.join(__dirname, '../dist/index.html')) + query + hash;
+    mainWindow.loadURL(target);
+    mainWindow.focus();
+  }
+  return true;
+}
+
+if (process.platform === 'win32') {
+  app.setAsDefaultProtocolClient(RECOVERY_PROTOCOL);
+  const initialUrl = process.argv.find(value => value.startsWith(RECOVERY_PROTOCOL + '://'));
+  if (initialUrl) handleRecoveryUrl(initialUrl);
+}
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    const url = commandLine.find(value => value.startsWith(RECOVERY_PROTOCOL + '://'));
+    if (url) handleRecoveryUrl(url);
+  });
+}
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -95,7 +127,10 @@ function createWindow() {
       sandbox: true,
     },
   });
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    if (pendingRecoveryUrl) handleRecoveryUrl(pendingRecoveryUrl);
+  });
   if (isDev) mainWindow.loadURL('http://localhost:3000');
   else mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   mainWindow.on('closed', () => { mainWindow = null; });
