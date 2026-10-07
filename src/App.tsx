@@ -171,6 +171,10 @@ export default function App() {
   const handleTriggerManualPrint = useCallback((jobId: string) => {
     const job = jobs.find((item) => item.id === jobId);
     if (!job) return;
+    if (!printers.length || !job.printerName || job.printerName === 'Unassigned') {
+      setWorkspaceError('No printer selected. Select a Windows printer in Printers & Trays before printing.');
+      return;
+    }
     if (!window.autoPrintNative || !job.localFileId) {
       soundManager.playPaperFeedTick();
       handleUpdateJobStatus(jobId, 'printing');
@@ -208,7 +212,7 @@ export default function App() {
         handleUpdateJobStatus(jobId, 'cancelled');
         setWorkspaceError(error instanceof Error ? error.message : 'Could not queue native print.');
       });
-  }, [jobs, handleUpdateJobStatus]);
+  }, [jobs, printers.length, handleUpdateJobStatus]);
 
   const handleTopUpWallet = useCallback((amount: number) => {
     setShopProfile((prev) => ({ ...prev, subscription: { ...prev.subscription, prepaidWalletBalance: prev.subscription.prepaidWalletBalance + amount } }));
