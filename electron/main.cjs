@@ -40,9 +40,6 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
-const isDev = !app.isPackaged;
-let mainWindow;
-
 function registryPath() {
   return path.join(app.getPath('userData'), 'local-registry.json');
 }
