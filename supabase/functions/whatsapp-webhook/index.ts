@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getWhatsAppProvider } from "./provider.ts";
+import { getWhatsAppProvider } from "../_shared/whatsapp-provider.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
