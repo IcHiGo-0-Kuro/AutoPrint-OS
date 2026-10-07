@@ -54,7 +54,6 @@ export function ShopSetupGate({ onCreated }: { onCreated: () => void }) {
     setError('');
     try {
       if (!whatsappNumber.trim()) throw new Error('WhatsApp number is required so customers can send print jobs to this shop.');
-      if (!selectedPrinters.length) throw new Error('No printer selected. Select at least one Windows printer before finishing setup.');
       await createShop(name.trim(), city.trim(), campus.trim(), ownerName.trim(), whatsappNumber.trim(), nativePrinters.filter((printer) => selectedPrinters.includes(printer.name)));
       onCreated();
     } catch (err) {
@@ -82,12 +81,12 @@ export function ShopSetupGate({ onCreated }: { onCreated: () => void }) {
 
         <section className="mt-6 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
           <div className="flex items-center justify-between gap-3">
-            <div><h2 className="font-semibold flex items-center gap-2"><Printer className="w-4 h-4 text-indigo-400" /> Windows printers</h2><p className="text-[11px] text-slate-500 mt-1">Choose the printers Printomatic may use for automatic job printing.</p></div>
+            <div><h2 className="font-semibold flex items-center gap-2"><Printer className="w-4 h-4 text-indigo-400" /> Windows printers</h2><p className="text-[11px] text-slate-500 mt-1">Select a Windows printer if one is available. You can also skip this and add a printer later.</p></div>
             <button type="button" onClick={() => void loadPrinters()} disabled={loadingPrinters} className="px-3 py-2 rounded-lg bg-slate-800 text-xs disabled:opacity-50">{loadingPrinters ? 'Scanning…' : 'Refresh'}</button>
           </div>
 
           <div className="mt-3 space-y-2">
-            {!nativePrinters.length && !loadingPrinters && <p className="text-xs text-slate-500">No Windows printers found. Connect or install a printer, then refresh.</p>}
+            {!nativePrinters.length && !loadingPrinters && <p className="text-xs text-slate-500">No Windows printers found. You can finish setup now and add a printer later.</p>}
             {nativePrinters.map((printer) => {
               const selected = selectedPrinters.includes(printer.name);
               return <button type="button" key={printer.name} onClick={() => togglePrinter(printer.name)} className={`w-full flex items-center justify-between gap-3 p-3 rounded-lg border text-left ${selected ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-800 bg-slate-900'}`}>
@@ -100,7 +99,7 @@ export function ShopSetupGate({ onCreated }: { onCreated: () => void }) {
 
         {error && <div className="mt-4 text-xs text-red-300 bg-red-950/30 border border-red-900/50 rounded-lg p-3">{error}</div>}
         <button disabled={busy || loadingPrinters} className="w-full mt-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium">{busy ? 'Preparing your workspace…' : 'Finish setup & open Printomatic'}</button>
-        <p className="text-[10px] text-slate-500 mt-3 text-center flex items-center justify-center gap-1"><Wifi className="w-3 h-3" /> Jobs assigned to selected printers can be printed automatically by the desktop agent.</p>
+        <p className="text-[10px] text-slate-500 mt-3 text-center flex items-center justify-center gap-1"><Wifi className="w-3 h-3" /> Your details stay tied to your signed-in shop. If no printer is available yet, you can add one later from Printers & Trays.</p>
       </form>
     </div>
   );
