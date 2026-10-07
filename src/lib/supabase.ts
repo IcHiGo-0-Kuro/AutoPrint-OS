@@ -1,8 +1,6 @@
 const configuredUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const configuredKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
 
-// The publishable key is intended for client/desktop builds.
-// Environment variables can still override these defaults for development or another deployment.
 const url = (configuredUrl || 'https://ngdbwujpfbsgzfwfmddq.supabase.co').replace(/\/$/, '');
 const key = configuredKey || 'sb_publishable_tKjMe7fU3yBzn3HwdbbNuw_W8xzdqv1';
 const STORAGE_KEY = 'autoprint.supabase.session';
@@ -13,6 +11,15 @@ export function isSupabaseConfigured(){return Boolean(url&&key)}
 export function getStoredSession():Session|null{try{const raw=localStorage.getItem(STORAGE_KEY);return raw?JSON.parse(raw):null}catch{return null}}
 function store(s:Session|null){if(s)localStorage.setItem(STORAGE_KEY,JSON.stringify(s));else localStorage.removeItem(STORAGE_KEY)}
 
+class SupabaseRequestError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'SupabaseRequestError';
+    this.status = status;
+  }
+}
+
 async function request(path:string,init:RequestInit={},authToken?:string){
   if(!url||!key)throw new Error('Supabase environment is not configured.');
   const headers:Record<string,string>={apikey:key,'Content-Type':'application/json'};
@@ -21,7 +28,7 @@ async function request(path:string,init:RequestInit={},authToken?:string){
   const text=await res.text();
   let data:any;
   try{data=text?JSON.parse(text):null}catch{data=text}
-  if(!res.ok)throw new Error(data?.msg||data?.message||data?.error_description||text||'Supabase request failed.');
+  if(!res.ok)throw new SupabaseRequestError(data?.msg||data?.message||data?.error_description||text||'Supabase request failed.',res.status);
   return data;
 }
 
@@ -55,9 +62,6 @@ export function restoreRecoverySessionFromUrl():Session|null{
     user=undefined;
   }
 
-  // The recovery access token contains the authenticated subject. Decode only
-  // the JWT payload locally; the token itself is still verified by Supabase
-  // when the password update request is made.
   if(!user){
     try{
       const payload=JSON.parse(atob(accessToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
@@ -92,9 +96,24 @@ export async function signUp(email:string,password:string){
 
 export async function refreshSession(){
   const current=getStoredSession();
-  if(!current?.refresh_token)throw new Error('No refresh token available.');
-  const s=sessionFrom(await request('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:current.refresh_token})}));
-  store(s);return s;
+  if(!current?.refresh_token)throw new Error('Your sign-in session has expired. Please sign in again.');
+  try {
+    const s=sessionFrom(await request('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:current.refresh_token})}));
+    store(s);return s;
+  } catch (error) {
+    store(null);
+    throw new Error('Your sign-in session has expired. Please sign in again.');
+  }
+}
+
+async function getValidSession():Promise<Session>{
+  const current=getStoredSession();
+  if(!current)throw new Error('Not signed in.');
+  const expiresAt=current.expires_at;
+  if(typeof expiresAt==='number' && expiresAt <= Math.floor(Date.now()/1000) + 30){
+    return refreshSession();
+  }
+  return current;
 }
 
 function getRecoveryRedirectUrl(){
@@ -105,8 +124,6 @@ function getRecoveryRedirectUrl(){
 }
 
 export async function sendPasswordRecoveryCode(email:string){
-  // Use Supabase's standard recovery-link flow. The redirect URL is sent explicitly
-  // so the recovery email returns to Printomatic instead of the Supabase dashboard.
   await request('/auth/v1/recover',{
     method:'POST',
     body:JSON.stringify({email,redirect_to:getRecoveryRedirectUrl()})
@@ -129,6 +146,18 @@ export async function updatePassword(password:string){
 export function signOut(){store(null)}
 
 export async function db<T=any>(path:string,init:RequestInit={},session=getStoredSession()):Promise<T>{
-  if(!session)throw new Error('Not signed in.');
-  return request('/rest/v1'+path,{...init,headers:{Authorization:'Bearer '+session.access_token,...(init.headers||{})}});
+  let active = session;
+  if(!active)throw new Error('Not signed in.');
+  if(typeof active.expires_at==='number' && active.expires_at <= Math.floor(Date.now()/1000) + 30){
+    active = await refreshSession();
+  }
+  try {
+    return await request('/rest/v1'+path,{...init,headers:{Authorization:'Bearer '+active.access_token,...(init.headers||{})}},active.access_token);
+  } catch (error) {
+    if(error instanceof SupabaseRequestError && error.status===401 && active.refresh_token){
+      const refreshed = await refreshSession();
+      return request('/rest/v1'+path,{...init,headers:{Authorization:'Bearer '+refreshed.access_token,...(init.headers||{})}},refreshed.access_token);
+    }
+    throw error;
+  }
 }
