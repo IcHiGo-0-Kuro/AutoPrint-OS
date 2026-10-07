@@ -54,7 +54,7 @@ export function ShopSetupGate({ onCreated }: { onCreated: () => void }) {
     setError('');
     try {
       if (!whatsappNumber.trim()) throw new Error('WhatsApp number is required so customers can send print jobs to this shop.');
-      if (!selectedPrinters.length) throw new Error('Select at least one Windows printer before finishing setup.');
+      if (!selectedPrinters.length) throw new Error('No printer selected. Select at least one Windows printer before finishing setup.');
       await createShop(name.trim(), city.trim(), campus.trim(), ownerName.trim(), whatsappNumber.trim(), nativePrinters.filter((printer) => selectedPrinters.includes(printer.name)));
       onCreated();
     } catch (err) {
