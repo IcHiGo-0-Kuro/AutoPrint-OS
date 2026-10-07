@@ -180,3 +180,134 @@
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: color-mix(in srgb, var(--ap-bg) 85%, transparent); }
 ::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.35); border-radius: 3px; }
+
+
+/* --- Printomatic polish layer: visual-only, no workflow changes --- */
+::selection { background: color-mix(in srgb, var(--ap-accent) 32%, transparent); color: white; }
+
+body {
+  margin: 0;
+  background: var(--ap-bg);
+  color: #e2e8f0;
+  text-rendering: optimizeLegibility;
+}
+
+button, input, textarea, select { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+
+.autoprint-shell main {
+  background:
+    radial-gradient(circle at 82% 0%, color-mix(in srgb, var(--ap-accent) 7%, transparent), transparent 28rem),
+    var(--ap-bg);
+}
+
+.autoprint-shell main > div > * {
+  animation: ap-enter .22s ease-out both;
+}
+
+.autoprint-shell input,
+.autoprint-shell textarea,
+.autoprint-shell select {
+  transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+}
+
+.autoprint-shell input:focus,
+.autoprint-shell textarea:focus,
+.autoprint-shell select:focus {
+  border-color: color-mix(in srgb, var(--ap-accent) 62%, transparent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ap-accent) 12%, transparent);
+}
+
+.autoprint-shell button {
+  transition: transform .16s ease, filter .16s ease, border-color .16s ease, background-color .16s ease, color .16s ease;
+}
+
+.autoprint-shell button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.autoprint-shell button:disabled {
+  cursor: not-allowed;
+}
+
+.autoprint-shell .bg-indigo-600:hover {
+  filter: brightness(1.08);
+}
+
+.autoprint-panel:hover {
+  border-color: color-mix(in srgb, var(--ap-accent) 20%, var(--ap-border));
+}
+
+.autoprint-header > div:first-child {
+  position: relative;
+}
+
+.autoprint-header > div:first-child::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  position: absolute;
+  left: 23px;
+  bottom: 1px;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 9px rgba(52, 211, 153, .7);
+  border: 1px solid var(--ap-panel);
+}
+
+.autoprint-header-status {
+  border: 1px solid var(--ap-border);
+  background: color-mix(in srgb, var(--ap-bg) 48%, transparent);
+}
+
+.autoprint-header-icon {
+  border: 1px solid transparent;
+}
+
+.autoprint-header-icon:hover {
+  border-color: var(--ap-border);
+}
+
+.autoprint-sidebar-brand {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ap-accent) 4%, transparent), transparent);
+}
+
+.autoprint-sidebar-stats > div {
+  transition: border-color .18s ease, background-color .18s ease, transform .18s ease;
+}
+
+.autoprint-sidebar-stats > div:hover {
+  border-color: color-mix(in srgb, var(--ap-accent) 20%, var(--ap-border));
+  background: color-mix(in srgb, var(--ap-accent) 5%, var(--ap-bg));
+  transform: translateY(-1px);
+}
+
+.autoprint-nav-item:focus-visible,
+.autoprint-header-icon:focus-visible,
+.autoprint-icon-button:focus-visible,
+.autoprint-command-bar:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ap-accent) 65%, transparent);
+  outline-offset: 2px;
+}
+
+.autoprint-nav-item.is-active {
+  box-shadow: inset 2px 0 0 var(--ap-accent), 0 4px 18px color-mix(in srgb, var(--ap-accent) 6%, transparent);
+}
+
+.autoprint-sidebar-wallet {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ap-accent) 6%, var(--ap-bg)), var(--ap-bg));
+}
+
+@keyframes ap-enter {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
