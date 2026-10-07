@@ -1,0 +1,14 @@
+<svg width="320" height="88" viewBox="0 0 320 88" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <linearGradient id="g" x1="20" y1="12" x2="78" y2="70" gradientUnits="userSpaceOnUse">
+    <stop stop-color="#22D3EE"/><stop offset="0.55" stop-color="#3B82F6"/><stop offset="1" stop-color="#8B5CF6"/>
+  </linearGradient>
+</defs>
+<rect x="2" y="2" width="84" height="84" rx="24" fill="#0B1020"/>
+<path d="M23 28C23 22.477 27.477 18 33 18H55C67.15 18 77 27.85 77 40C77 52.15 67.15 62 55 62H43L34 72H23V28Z" fill="url(#g)"/>
+<path d="M31 37H61" stroke="#08101F" stroke-width="6" stroke-linecap="round"/>
+<path d="M31 48H55" stroke="#08101F" stroke-width="6" stroke-linecap="round"/>
+<path d="M32 56L28 68H55L62 56H32Z" fill="white" opacity=".96"/>
+<path d="M13 42H22M10 51H19M16 60H23" stroke="#22D3EE" stroke-width="4" stroke-linecap="round"/>
+<text x="98" y="55" fill="#F8FAFC" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="31" font-weight="750" letter-spacing="-1.2">Printomatic</text>
+</svg>
