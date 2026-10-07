@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 
 const RECOVERY_PROTOCOL = 'printomatic';
@@ -451,6 +451,24 @@ function registerIpc() {
     writePrintQueue(jobs);
     void processPrintQueue();
     return job;
+  });
+
+  ipcMain.handle('print:test-document', async () => {
+    const pdf = await PDFDocument.create();
+    const page = pdf.addPage([612, 792]);
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    page.drawText('PRINTOMATIC PRINTER TEST', { x: 150, y: 700, size: 20, font: bold, color: rgb(0.2, 0.2, 0.2) });
+    page.drawText('Printer-free validation document', { x: 190, y: 665, size: 11, font, color: rgb(0.4, 0.4, 0.4) });
+    page.drawLine({ start: { x: 90, y: 640 }, end: { x: 522, y: 640 }, thickness: 1, color: rgb(0.7, 0.7, 0.7) });
+    page.drawText('This confirms that Printomatic can generate a printable document', { x: 120, y: 590, size: 11, font });
+    page.drawText('without requiring a physical printer during development.', { x: 135, y: 570, size: 11, font });
+    page.drawText('Next hardware step: select a real Windows printer and run a test print.', { x: 105, y: 510, size: 10, font });
+    const filePath = path.join(app.getPath('downloads'), 'Printomatic-Printer-Test.pdf');
+    fs.writeFileSync(filePath, await pdf.save());
+    const openError = await shell.openPath(filePath);
+    if (openError) throw new Error('Test document was created but could not be opened: ' + openError);
+    return { path: filePath, name: path.basename(filePath) };
   });
 
   ipcMain.handle('print:queue', () => readPrintQueue());
