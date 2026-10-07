@@ -57,11 +57,30 @@ export function NavigationSidebar(p: P) {
   return (
     <aside className={`autoprint-sidebar ${collapsed ? 'is-collapsed' : ''}`} aria-label="Main navigation">
       <div className="autoprint-sidebar-brand">
-        <div className="autoprint-shop-mark">{p.shopProfile.shopName.charAt(0).toUpperCase()}</div>
-        {!collapsed && <div className="min-w-0"><h2 className="text-sm font-semibold truncate">{p.shopProfile.shopName}</h2><div className="flex items-center gap-1 text-[11px] text-slate-400"><Building2 className="w-3 h-3 shrink-0" /><span className="truncate">{p.shopProfile.collegeCampus}</span></div></div>}
-        <button className="autoprint-icon-button ml-auto" onClick={() => setCollapsed(!collapsed)} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </button>
+        {!collapsed ? (
+          <div className="w-full">
+            <div className="flex items-center justify-between gap-2">
+              <img src="/printomatic-logo.svg" alt="Printomatic" className="h-11 w-auto max-w-[190px] object-contain object-left" />
+              <button className="autoprint-icon-button shrink-0" onClick={() => setCollapsed(true)} title="Collapse sidebar" aria-label="Collapse sidebar">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center gap-2 min-w-0">
+              <div className="autoprint-shop-mark">{p.shopProfile.shopName.charAt(0).toUpperCase()}</div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold truncate">{p.shopProfile.shopName}</h2>
+                <div className="flex items-center gap-1 text-[11px] text-slate-400"><Building2 className="w-3 h-3 shrink-0" /><span className="truncate">{p.shopProfile.collegeCampus}</span></div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="w-full flex flex-col items-center gap-2">
+            <img src="/printomatic-logo.svg" alt="Printomatic" className="h-10 w-10 object-cover object-left" />
+            <button className="autoprint-icon-button" onClick={() => setCollapsed(false)} title="Expand sidebar" aria-label="Expand sidebar">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {!collapsed && <div className="autoprint-sidebar-stats"><div><span>B&W</span><b>₹{p.shopProfile.rates.bwDuplex.toFixed(2)}</b></div><div><span>Color</span><b>₹{p.shopProfile.rates.colorSingle.toFixed(2)}</b></div></div>}
