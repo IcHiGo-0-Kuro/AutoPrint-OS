@@ -19,7 +19,7 @@ export function DesktopHeader(p: P) {
     <header className="autoprint-header">
       <div className="flex items-center gap-3 min-w-0">
         <div className="autoprint-header-mark"><Printer className="w-4 h-4" /></div>
-        <div className="min-w-0"><b className="text-sm">AutoPrint OS</b><div className="text-[10px] text-slate-500 truncate">{p.shopName} · Windows workstation</div></div>
+        <div className="min-w-0"><b className="text-sm">Printomatic</b></div>
       </div>
 
       <button className="autoprint-command-bar" title="Search and commands">
