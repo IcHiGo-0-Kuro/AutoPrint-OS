@@ -172,8 +172,10 @@ export async function enqueueNativePrint(job: PrintJob) {
 
 export async function updateJobStatus(jobId: string, status: PrintJob['jobStatus']) {
   const session = getStoredSession(); if (!session) throw new Error('Not signed in.');
-  const patch: Record<string, unknown> = { status: dbJobStatus(status), updated_at: new Date().toISOString() };
-  if (status === 'printed_ready') patch.hardcopy_status = 'ready'; if (status === 'completed') patch.hardcopy_status = 'collected';
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = { status: dbJobStatus(status), updated_at: now };
+  if (status === 'printed_ready') { patch.hardcopy_status = 'ready'; patch.printed_at = now; }
+  if (status === 'completed') { patch.hardcopy_status = 'collected'; patch.completed_at = now; }
   await db(`/print_jobs?id=eq.${jobId}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(patch) }, session);
 }
 export async function updateStapled(jobId: string, value: boolean) {
