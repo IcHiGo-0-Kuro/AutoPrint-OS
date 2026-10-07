@@ -1,7 +1,10 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const path = require('path');
 
 const RECOVERY_PROTOCOL = 'printomatic';
 let pendingRecoveryUrl = null;
+let mainWindow = null;
+const isDev = !app.isPackaged;
 
 function handleRecoveryUrl(rawUrl) {
   if (typeof rawUrl !== 'string' || !rawUrl.startsWith(RECOVERY_PROTOCOL + '://auth/recovery')) return false;
@@ -9,7 +12,9 @@ function handleRecoveryUrl(rawUrl) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     const hash = rawUrl.includes('#') ? rawUrl.slice(rawUrl.indexOf('#')) : '';
     const query = rawUrl.includes('?') ? rawUrl.slice(rawUrl.indexOf('?'), rawUrl.includes('#') ? rawUrl.indexOf('#') : rawUrl.length) : '';
-    const target = (isDev ? 'http://localhost:3000/' : 'file://' + path.join(__dirname, '../dist/index.html')) + query + hash;
+    const target = isDev
+      ? 'http://localhost:3000/' + query + hash
+      : 'file://' + path.join(__dirname, '../dist/index.html') + query + hash;
     mainWindow.loadURL(target);
     mainWindow.focus();
   }
@@ -18,8 +23,6 @@ function handleRecoveryUrl(rawUrl) {
 
 if (process.platform === 'win32') {
   app.setAsDefaultProtocolClient(RECOVERY_PROTOCOL);
-  const initialUrl = process.argv.find(value => value.startsWith(RECOVERY_PROTOCOL + '://'));
-  if (initialUrl) handleRecoveryUrl(initialUrl);
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -31,7 +34,6 @@ if (!gotSingleInstanceLock) {
     if (url) handleRecoveryUrl(url);
   });
 }
-const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
