@@ -47,6 +47,7 @@ declare global {
           status: 'queued' | 'printing' | 'completed' | 'failed';
           queuedAt: string; startedAt: string | null; completedAt: string | null; error: string | null;
         }>;
+        createTestDocument: () => Promise<{ path: string; name: string }>;
         queue: () => Promise<Array<{
           id: string; localFileId: string; printerName: string; copies: number; fileName: string;
           status: 'queued' | 'printing' | 'completed' | 'failed';
