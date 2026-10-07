@@ -11,7 +11,7 @@
     "lint": "tsc --noEmit",
     "desktop:dev": "concurrently -k \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
     "desktop:build": "npm run build && electron-builder --dir",
-    "desktop:dist": "npm run build && electron-builder"
+    "desktop:dist": "npm run build && electron-builder --publish never"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
