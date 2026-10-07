@@ -33,6 +33,7 @@ export function PrinterSettings(p: P) {
   const [nativePrinters, setNativePrinters] = useState<NativePrinter[]>([]);
   const [nativeLoading, setNativeLoading] = useState(false);
   const [nativeError, setNativeError] = useState('');
+  const [testDocumentBusy, setTestDocumentBusy] = useState(false);
 
   const loadNativePrinters = async () => {
     if (!window.autoPrintNative) {
@@ -75,6 +76,18 @@ export function PrinterSettings(p: P) {
     setOpen(false);
   };
 
+  const createTestDocument = async () => {
+    if (!window.autoPrintNative) {
+      setNativeError('The printer-free test is available in the installed desktop app.');
+      return;
+    }
+    setTestDocumentBusy(true);
+    setNativeError('');
+    try { await window.autoPrintNative.print.createTestDocument(); }
+    catch (error) { setNativeError(error instanceof Error ? error.message : 'Could not create the printer test document.'); }
+    finally { setTestDocumentBusy(false); }
+  };
+
   const openQueue = async (printerName: string) => {
     try {
       await window.autoPrintNative?.printers.openQueue(printerName);
@@ -101,13 +114,14 @@ export function PrinterSettings(p: P) {
             <h2 className="font-semibold flex items-center gap-2"><Monitor className="w-4 h-4 text-indigo-400" /> Local Windows printers</h2>
             <p className="text-xs text-slate-500 mt-1">Discovered directly from the installed AutoPrint desktop agent.</p>
           </div>
-          <button onClick={() => void loadNativePrinters()} disabled={nativeLoading} className="flex items-center gap-2 px-3 py-2 bg-slate-800 rounded-lg text-xs disabled:opacity-50">
-            <RefreshCw className={nativeLoading ? 'w-3.5 h-3.5 animate-spin' : 'w-3.5 h-3.5'} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => void createTestDocument()} disabled={testDocumentBusy} className="flex items-center gap-2 px-3 py-2 bg-indigo-600 rounded-lg text-xs disabled:opacity-50"><TestTube2 className="w-3.5 h-3.5" /> {testDocumentBusy ? 'Creating…' : 'Printer-free test'}</button>
+            <button onClick={() => void loadNativePrinters()} disabled={nativeLoading} className="flex items-center gap-2 px-3 py-2 bg-slate-800 rounded-lg text-xs disabled:opacity-50"><RefreshCw className={nativeLoading ? 'w-3.5 h-3.5 animate-spin' : 'w-3.5 h-3.5'} /> Refresh</button>
+          </div>
         </div>
         {nativeError && <p className="text-xs text-amber-300 bg-amber-950/30 border border-amber-900/40 rounded-lg p-3">{nativeError}</p>}
         {nativePrinters.length === 0 && !nativeLoading ? (
-          <p className="text-xs text-slate-500">No local printers were discovered.</p>
+          <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3 text-xs text-amber-200"><b>No printer selected.</b> No local Windows printer is currently available in Printomatic. You can still use Printer-free test to validate the desktop document flow.</div>
         ) : (
           <div className="space-y-2">
             {nativePrinters.map((printer) => (
