@@ -13,6 +13,10 @@ export function WhatsAppHub({ shopProfile }: P) {
 
   useEffect(() => {
     setPhoneNumber(shopProfile.whatsappNumber || '');
+    if (!shopProfile.id) {
+      setConnection(null);
+      return;
+    }
     void getWhatsAppConnection(shopProfile.id).then(setConnection).catch(() => setConnection(null));
   }, [shopProfile.id, shopProfile.whatsappNumber]);
 
