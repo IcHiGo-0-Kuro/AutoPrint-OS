@@ -393,6 +393,16 @@ function registerIpc() {
 
   ipcMain.handle('files:register', (_, filePath) => registerLocalFile(filePath));
 
+  ipcMain.handle('files:open', async (_, filePath) => {
+    if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('Invalid file path.');
+    const absolutePath = path.resolve(filePath);
+    if (!fs.existsSync(absolutePath)) throw new Error('The local document no longer exists.');
+    const stat = fs.statSync(absolutePath);
+    if (!stat.isFile()) throw new Error('The local document path is not a file.');
+    const openError = await shell.openPath(absolutePath);
+    if (openError) throw new Error('Could not open the document: ' + openError);
+  });
+
   ipcMain.handle('files:resolve', (_, localFileId) => {
     if (typeof localFileId !== 'string' || !localFileId.trim()) throw new Error('Invalid local file ID.');
     const registry = readRegistry();
