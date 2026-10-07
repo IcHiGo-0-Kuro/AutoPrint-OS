@@ -126,6 +126,21 @@ export async function syncWhatsAppDocuments() {
   }
   return { imported: imported.length, failed, documents: imported };
 }
+
+export async function notifyNoPrinter(documentId: string) {
+  const session = getStoredSession();
+  if (!session) throw new Error('Not signed in.');
+  const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined || 'https://ngdbwujpfbsgzfwfmddq.supabase.co').replace(/\/$/, '');
+  const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined || 'sb_publishable_tKjMe7fU3yBzn3HwdbbNuw_W8xzdqv1';
+  const response = await fetch(base + '/functions/v1/whatsapp-media-sync', {
+    method: 'POST',
+    headers: { apikey: key, Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'notify_no_printer', document_id: documentId }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error || 'Could not notify the customer about the missing printer.');
+  return data;
+}
 export async function reconcileNativePrintQueue(jobs: PrintJob[], autoSpoolEnabled: boolean) {
   if (!window.autoPrintNative) return;
   const nativeQueue = await window.autoPrintNative.print.queue();
