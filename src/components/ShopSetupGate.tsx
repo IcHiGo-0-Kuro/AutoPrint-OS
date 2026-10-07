@@ -66,14 +66,14 @@ export function ShopSetupGate({ onCreated }: { onCreated: () => void }) {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
-      <form onSubmit={submit} className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-7 shadow-2xl">
+      <form onSubmit={submit} className="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl p-7 shadow-2xl">
         <div className="flex items-center gap-3 mb-6">
           <div className="autoprint-header-mark"><Store className="w-5 h-5" /></div>
           <div><h1 className="text-xl font-semibold">Set up your Printomatic shop</h1><p className="text-xs text-slate-400 mt-1">Enter the real shop details once. They are saved to your private shop workspace.</p></div>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4">
-          <label className="block text-xs text-slate-400">Shop name<input required value={name} onChange={e=>setName(e.target.value)} className="mt-1 w-full px-3 py-2.5 rounded-lg bg-slate-950 border border-slate-800" /></label>
+        <div className="grid md:grid-cols-2 gap-5">
+          <label className="block text-sm font-medium text-slate-300">Shop name<input required value={name} onChange={e=>setName(e.target.value)} className="mt-2 w-full px-4 py-3 text-sm rounded-lg bg-slate-950 border border-slate-800" /></label>
           <label className="block text-xs text-slate-400">Owner / operator name<input required value={ownerName} onChange={e=>setOwnerName(e.target.value)} className="mt-1 w-full px-3 py-2.5 rounded-lg bg-slate-950 border border-slate-800" /></label>
           <label className="block text-xs text-slate-400">WhatsApp number<input required value={whatsappNumber} onChange={e=>setWhatsappNumber(e.target.value)} placeholder="+91..." type="tel" className="mt-1 w-full px-3 py-2.5 rounded-lg bg-slate-950 border border-slate-800" /><span className="block mt-1 text-[10px] text-slate-500">The number customers will use to send documents to this shop.</span></label>
           <label className="block text-xs text-slate-400">City<input value={city} onChange={e=>setCity(e.target.value)} className="mt-1 w-full px-3 py-2.5 rounded-lg bg-slate-950 border border-slate-800" /></label>
@@ -99,7 +99,7 @@ export function ShopSetupGate({ onCreated }: { onCreated: () => void }) {
         </section>
 
         {error && <div className="mt-4 text-xs text-red-300 bg-red-950/30 border border-red-900/50 rounded-lg p-3">{error}</div>}
-        <button disabled={busy || loadingPrinters} className="w-full mt-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium">{busy ? 'Creating your shop…' : 'Create account workspace'}</button>
+        <button disabled={busy || loadingPrinters} className="w-full mt-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium">{busy ? 'Preparing your workspace…' : 'Finish setup & open Printomatic'}</button>
         <p className="text-[10px] text-slate-500 mt-3 text-center flex items-center justify-center gap-1"><Wifi className="w-3 h-3" /> Jobs assigned to selected printers can be printed automatically by the desktop agent.</p>
       </form>
     </div>
