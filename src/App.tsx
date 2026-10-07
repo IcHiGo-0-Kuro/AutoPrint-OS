@@ -87,7 +87,7 @@ export default function App() {
         if (result.documents.length && printers.length === 0) {
           for (const document of result.documents) {
             try {
-              if (document.path) await window.autoPrintNative.files.open(document.path);
+              if (document.path) await window.autoPrintNative?.files.open(document.path);
               await notifyNoPrinter(document.id);
             } catch (error) {
               if (active) setWorkspaceError(error instanceof Error ? error.message : 'Could not open the WhatsApp document.');
