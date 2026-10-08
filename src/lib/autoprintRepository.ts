@@ -67,15 +67,30 @@ export async function registerCurrentDevice(shopId: string) {
   return device;
 }
 
-export async function loadWorkspace(): Promise<{ shop: ShopProfile; printers: PrinterDevice[]; jobs: PrintJob[] }> {
+export async function loadShopMemberships(): Promise<Array<{ shopId: string; shopName: string; role: string }>> {
+  const session = getStoredSession();
+  if (!session) throw new Error('Please sign in to AutoPrint OS.');
+  const memberships = await db<any[]>(`/shop_members?user_id=eq.${encodeURIComponent(session.user.id)}&select=shop_id,role&order=created_at.asc`, {}, session);
+  if (!memberships.length) return [];
+  const shopIds = memberships.map((membership) => membership.shop_id).filter(Boolean);
+  const shops = await db<any[]>(`/shops?id=in.(${shopIds.join(',')})&select=id,name`, {}, session);
+  const names = new Map(shops.map((shop) => [shop.id, shop.name]));
+  return memberships
+    .filter((membership) => names.has(membership.shop_id))
+    .map((membership) => ({ shopId: membership.shop_id, shopName: names.get(membership.shop_id) || 'Shop', role: membership.role }));
+}
+
+export async function loadWorkspace(shopId?: string): Promise<{ shop: ShopProfile; printers: PrinterDevice[]; jobs: PrintJob[] }> {
   const session = getStoredSession(); if (!session) throw new Error('Please sign in to AutoPrint OS.');
-  const memberships = await db<any[]>(`/shop_members?user_id=eq.${encodeURIComponent(session.user.id)}&select=shop_id,role&order=created_at.asc&limit=1`, {}, session);
+  const memberships = await db<any[]>(`/shop_members?user_id=eq.${encodeURIComponent(session.user.id)}&select=shop_id,role&order=created_at.asc`, {}, session);
   if (!memberships.length) throw new Error('Your account is not assigned to a shop yet. Create or join a shop first.');
-  const shopId = memberships[0].shop_id;
+  const selectedMembership = shopId ? memberships.find((membership) => membership.shop_id === shopId) : memberships[0];
+  if (!selectedMembership) throw new Error('You do not have access to that shop.');
+  const activeShopId = selectedMembership.shop_id;
   const [shops, settingsRows, printerRows, statusRows, jobRows] = await Promise.all([
-    db<any[]>(`/shops?id=eq.${shopId}&select=*`, {}, session), db<any[]>(`/shop_settings?shop_id=eq.${shopId}&select=*`, {}, session),
-    db<any[]>(`/printers?shop_id=eq.${shopId}&select=*`, {}, session), db<any[]>(`/printer_status?select=*`, {}, session),
-    db<any[]>(`/print_jobs?shop_id=eq.${shopId}&select=*&order=created_at.desc&limit=500`, {}, session)
+    db<any[]>(`/shops?id=eq.${activeShopId}&select=*`, {}, session), db<any[]>(`/shop_settings?shop_id=eq.${activeShopId}&select=*`, {}, session),
+    db<any[]>(`/printers?shop_id=eq.${activeShopId}&select=*`, {}, session), db<any[]>(`/printer_status?select=*`, {}, session),
+    db<any[]>(`/print_jobs?shop_id=eq.${activeShopId}&select=*&order=created_at.desc&limit=500`, {}, session)
   ]);
   const shop = shops[0]; if (!shop) throw new Error('Shop record not found.');
   const s = settingsRows[0] || {};
