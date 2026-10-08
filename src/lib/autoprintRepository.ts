@@ -155,7 +155,7 @@ export async function reconcileNativePrintQueue(jobs: PrintJob[], autoSpoolEnabl
       continue;
     }
     if (native?.status === 'failed' && job.jobStatus !== 'cancelled') {
-      updates.push({ id: job.id, status: 'cancelled' });
+      updates.push({ id: job.id, status: 'failed' });
       continue;
     }
     if (autoSpoolEnabled && job.jobStatus === 'queued' && job.localFileId && job.printerName && !native) {
