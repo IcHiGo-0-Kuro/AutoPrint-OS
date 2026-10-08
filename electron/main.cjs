@@ -364,6 +364,65 @@ async function processPrintQueue() {
   }
 }
 
+
+function escapeSvgText(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+async function createPrintPreview(input) {
+  if (!input || typeof input !== 'object') throw new Error('Invalid print preview request.');
+  const jobId = String(input.jobId || 'preview').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'preview';
+  const fileName = escapeSvgText(String(input.fileName || 'WhatsApp document'));
+  const paper = escapeSvgText(String(input.paperSize || 'A4').toUpperCase());
+  const color = String(input.colorMode || 'bw') === 'color';
+  const sides = String(input.sides || 'single') === 'double' ? 'DOUBLE-SIDED' : 'SINGLE-SIDED';
+  const copies = Math.max(1, Math.min(999, Number(input.copies) || 1));
+  const pages = Math.max(1, Math.min(999, Number(input.pageCount) || 1));
+  const token = escapeSvgText(String(input.shortNumber || input.tokenNumber || '----'));
+  const sheets = sides === 'DOUBLE-SIDED' ? Math.ceil(pages / 2) : pages;
+  const paperFill = color ? '#e8f1ff' : '#f4f4f4';
+  const ink = color ? '#1d4ed8' : '#111827';
+  const pageX = 150;
+  const pageY = 150;
+  const pageW = 420;
+  const pageH = 560;
+  const page2 = sides === 'DOUBLE-SIDED'
+    ? '<rect x="180" y="175" width="420" height="560" rx="8" fill="#d9dee7" stroke="#9ca3af" stroke-width="2"/><text x="390" y="455" text-anchor="middle" font-size="24" fill="#6b7280" font-family="Arial">BACK SIDE</text>'
+    : '';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="760" height="980" viewBox="0 0 760 980">
+    <rect width="760" height="980" fill="#0f172a"/>
+    <rect x="28" y="28" width="704" height="924" rx="18" fill="#111827" stroke="#334155"/>
+    <text x="60" y="78" fill="#f8fafc" font-family="Arial" font-size="28" font-weight="700">PRINTOMATIC · PRINT PREVIEW</text>
+    <text x="60" y="112" fill="#94a3b8" font-family="Arial" font-size="15">${fileName}</text>
+    <rect x="60" y="135" width="640" height="1" fill="#334155"/>
+    <text x="60" y="170" fill="#cbd5e1" font-family="Arial" font-size="16">Paper: ${paper} · ${sides} · ${color ? 'COLOR' : 'BLACK &amp; WHITE'} · Copies: ${copies}</text>
+    <text x="60" y="196" fill="#cbd5e1" font-family="Arial" font-size="16">Document pages: ${pages} · Physical sheets per copy: ${sheets}</text>
+    <rect x="${pageX + 30}" y="${pageY + 30}" width="${pageW}" height="${pageH}" rx="8" fill="#020617" opacity="0.35"/>
+    <rect x="${pageX}" y="${pageY}" width="${pageW}" height="${pageH}" rx="8" fill="${paperFill}" stroke="#cbd5e1" stroke-width="2"/>
+    <rect x="190" y="190" width="340" height="52" rx="8" fill="${color ? '#dbeafe' : '#e5e7eb'}"/>
+    <text x="360" y="223" text-anchor="middle" fill="${ink}" font-family="Arial" font-size="18" font-weight="700">ORDER #${token}</text>
+    <line x1="205" y1="285" x2="515" y2="285" stroke="#94a3b8" stroke-width="3"/>
+    <line x1="205" y1="320" x2="480" y2="320" stroke="#cbd5e1" stroke-width="8"/>
+    <line x1="205" y1="350" x2="510" y2="350" stroke="#cbd5e1" stroke-width="8"/>
+    <line x1="205" y1="380" x2="450" y2="380" stroke="#cbd5e1" stroke-width="8"/>
+    <text x="360" y="445" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="16">CONTENT AREA</text>
+    <text x="360" y="650" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="14">This preview shows the requested print configuration.</text>
+    ${page2}
+    <text x="60" y="875" fill="#e2e8f0" font-family="Arial" font-size="17">No printer detected — preview opened instead of sending a print command.</text>
+    <text x="60" y="908" fill="#94a3b8" font-family="Arial" font-size="14">Configure a Windows printer to enable automatic printing.</text>
+  </svg>`;
+  const filePath = path.join(app.getPath('downloads'), 'Printomatic-Preview-' + jobId + '.svg');
+  fs.writeFileSync(filePath, svg, 'utf8');
+  const openError = await shell.openPath(filePath);
+  if (openError) throw new Error('Preview was created but could not be opened: ' + openError);
+  return { path: filePath, name: path.basename(filePath) };
+}
+
 function registerIpc() {
   ipcMain.handle('system:info', () => ({
     platform: process.platform,
@@ -462,6 +521,8 @@ function registerIpc() {
     void processPrintQueue();
     return job;
   });
+
+  ipcMain.handle('print:create-preview', async (_, input) => createPrintPreview(input));
 
   ipcMain.handle('print:test-document', async () => {
     const pdf = await PDFDocument.create();
