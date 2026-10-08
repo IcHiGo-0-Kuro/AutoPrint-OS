@@ -118,6 +118,8 @@ async function getValidSession():Promise<Session>{
 
 function getRecoveryRedirectUrl(){
   if(typeof window==='undefined') return 'printomatic://auth/recovery';
+  const isElectron = window.location.protocol === 'file:' || window.navigator.userAgent.includes('Electron');
+  if(isElectron) return 'printomatic://auth/recovery';
   return window.location.protocol === 'http:' || window.location.protocol === 'https:'
     ? window.location.origin
     : 'printomatic://auth/recovery';
