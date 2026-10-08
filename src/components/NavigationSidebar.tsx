@@ -13,6 +13,9 @@ type P = {
   activeQueueCount: number;
   readyForPickupCount: number;
   onOpenSettings: () => void;
+  shopOptions: Array<{ shopId: string; shopName: string; role: string }>;
+  activeShopId: string;
+  onSelectShop: (shopId: string) => void;
 };
 
 const themes: { id: AppTheme; label: string; description: string }[] = [
@@ -67,8 +70,16 @@ export function NavigationSidebar(p: P) {
             </div>
             <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center gap-2 min-w-0">
               <div className="autoprint-shop-mark">{p.shopProfile.shopName.charAt(0).toUpperCase()}</div>
-              <div className="min-w-0">
-                <h2 className="text-sm font-semibold truncate">{p.shopProfile.shopName}</h2>
+              <div className="min-w-0 flex-1">
+                <select
+                  value={p.activeShopId}
+                  onChange={(event) => p.onSelectShop(event.target.value)}
+                  disabled={p.shopOptions.length <= 1}
+                  className="w-full bg-transparent text-sm font-semibold truncate outline-none disabled:appearance-none"
+                  aria-label="Active shop workspace"
+                >
+                  {p.shopOptions.map((shop) => <option key={shop.shopId} value={shop.shopId} className="bg-slate-900">{shop.shopName} · {shop.role}</option>)}
+                </select>
                 <div className="flex items-center gap-1 text-[11px] text-slate-400"><Building2 className="w-3 h-3 shrink-0" /><span className="truncate">{p.shopProfile.collegeCampus}</span></div>
               </div>
             </div>
