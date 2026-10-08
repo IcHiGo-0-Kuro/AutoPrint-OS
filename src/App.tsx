@@ -298,7 +298,7 @@ export default function App() {
   if (needsShopSetup) return <ShopSetupGate onCreated={reloadWorkspace} />;
 
   return (
-    <div className="autoprint-shell min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="autoprint-shell h-screen min-h-0 bg-slate-950 text-slate-100 flex flex-col font-sans">
       <div className="h-8 px-4 flex items-center justify-between bg-slate-900 border-b border-slate-800 text-[11px] text-slate-400">
         <div className="flex items-center gap-2"><span className={`w-1.5 h-1.5 rounded-full ${connectedToCloud ? 'bg-emerald-400' : 'bg-amber-400'}`} />{connectedToCloud ? 'Supabase connected · shop workspace synced' : workspaceLoading ? 'Connecting to Supabase…' : workspaceError || 'Cloud connection unavailable'}</div>
         <div className="flex items-center gap-4"><NativeAgentStatus /><button onClick={() => { signOut(); window.location.reload(); }} className="hover:text-white">Sign out</button></div>
