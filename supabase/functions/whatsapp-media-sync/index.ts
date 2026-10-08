@@ -117,12 +117,12 @@ Deno.serve(async (request) => {
     if (error) return json({ error: "Could not acknowledge the local document." }, 500);
 
     const { data: order, error: orderError } = await admin.from("whatsapp_orders")
-      .select("id,shop_id,status,customer_name,copies,color_mode,sides,token_number,short_number")
+      .select("id,shop_id,status,customer_name,copies,color_mode,sides,page_count,amount,payment_status,token_number,short_number")
       .eq("id", document.order_id).maybeSingle();
     if (orderError) return json({ error: "Could not load the WhatsApp order." }, 500);
 
     let printJobId = null;
-    if (order && ["ready_for_quote", "quoted", "paid", "queued", "printing"].includes(order.status)) {
+    if (order && order.payment_status === "paid" && ["paid", "queued", "printing"].includes(order.status)) {
       const { data: existing } = await admin.from("print_jobs").select("id").eq("source_whatsapp_order_id", order.id).maybeSingle();
       if (existing) {
         printJobId = existing.id;
@@ -143,12 +143,12 @@ Deno.serve(async (request) => {
           document_name: document.document_name, queue_number: Number(maxRow?.queue_number || 0) + 1,
           print_count: Math.max(1, Math.min(999, Number(order.copies) || 1)), copies: Math.max(1, Math.min(999, Number(order.copies) || 1)),
           color_mode: order.color_mode === "color" ? "color" : "black_white", orientation: "portrait", pages_per_copy: 1,
-          sides: order.sides === "double" ? "double" : "single", skip_pages: [], price: 0, payment: "pending", status: "queued",
+          sides: order.sides === "double" ? "double" : "single", skip_pages: [], price: Number(order.amount || 0), payment: "paid", status: "queued",
           hardcopy_status: "not_required", local_file_id: localFileId, local_file_name: document.document_name,
           document_size_bytes: document.size_bytes, document_mime_type: document.mime_type, customer_name: order.customer_name,
           token_number: order.token_number, short_number: order.short_number, header_stamped: true, separator_sheet_included: true,
-          total_pages_to_print: 1, source_whatsapp_order_id: order.id,
-          notes: "Prototype WhatsApp order bridge; payment gate will be added before production.",
+          total_pages_to_print: Number(order.page_count || 1) * Math.max(1, Math.min(999, Number(order.copies) || 1)), source_whatsapp_order_id: order.id,
+          notes: "WhatsApp Agent paid order.",
         }).select("id").single();
         if (jobError) return json({ error: "Could not create the print job: " + jobError.message }, 500);
         printJobId = job.id;
