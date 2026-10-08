@@ -68,7 +68,7 @@ export function NavigationSidebar(p: P) {
         {!collapsed ? (
           <div className="w-full">
             <div className="flex items-center justify-between gap-2">
-              <img src="/printomatic-logo.svg" alt="Printomatic" className="h-11 w-auto max-w-[190px] object-contain object-left" />
+              <img src="./printomatic-logo.svg" alt="Printomatic" className="h-11 w-auto max-w-[190px] object-contain object-left" />
               <button className="autoprint-icon-button shrink-0" onClick={() => setCollapsed(true)} title="Collapse sidebar" aria-label="Collapse sidebar">
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -91,7 +91,7 @@ export function NavigationSidebar(p: P) {
           </div>
         ) : (
           <div className="w-full flex flex-col items-center gap-2">
-            <img src="/printomatic-mark.svg" alt="Printomatic" className="h-10 w-10 object-contain" />
+            <img src="./printomatic-mark.svg" alt="Printomatic" className="h-10 w-10 object-contain" />
             <button className="autoprint-icon-button" onClick={() => setCollapsed(false)} title="Expand sidebar" aria-label="Expand sidebar">
               <ChevronRight className="w-4 h-4" />
             </button>
