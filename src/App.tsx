@@ -14,7 +14,7 @@ import { soundManager } from './utils/audio';
 import { AuthGate } from './components/AuthGate';
 import { ShopSetupGate } from './components/ShopSetupGate';
 import { getStoredSession, signOut } from './lib/supabase';
-import { loadWorkspace, registerCurrentDevice, syncWhatsAppDocuments, notifyNoPrinter, enqueueNativePrint, reconcileNativePrintQueue, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
+import { loadShopMemberships, loadWorkspace, registerCurrentDevice, syncWhatsAppDocuments, notifyNoPrinter, enqueueNativePrint, reconcileNativePrintQueue, updateJobStatus as persistJobStatus, updateStapled as persistStapled, addPrinter as persistPrinter, saveSettings as persistSettings } from './lib/autoprintRepository';
 import { NativeAgentStatus } from './components/NativeAgentStatus';
 import { NativeFilePicker } from './components/NativeFilePicker';
 
@@ -30,13 +30,26 @@ export default function App() {
   const [workspaceError, setWorkspaceError] = useState('');
   const [connectedToCloud, setConnectedToCloud] = useState(false);
   const [needsShopSetup, setNeedsShopSetup] = useState(false);
+  const [shopOptions, setShopOptions] = useState<Array<{ shopId: string; shopName: string; role: string }>>([]);
+  const [activeShopId, setActiveShopId] = useState(() => localStorage.getItem('printomatic.activeShopId') || '');
 
   useEffect(() => {
     if (!getStoredSession()) return;
     let cancelled = false;
     setWorkspaceLoading(true);
-    loadWorkspace()
+    loadShopMemberships()
+      .then((memberships) => {
+        if (cancelled) return;
+        setShopOptions(memberships);
+        const selectedShopId = memberships.some((membership) => membership.shopId === activeShopId)
+          ? activeShopId
+          : memberships[0]?.shopId || '';
+        setActiveShopId(selectedShopId);
+        if (selectedShopId) localStorage.setItem('printomatic.activeShopId', selectedShopId);
+        return loadWorkspace(selectedShopId);
+      })
       .then((workspace) => {
+        if (!workspace || cancelled) return;
         if (cancelled) return;
         setShopProfile(workspace.shop);
         setPrinters(workspace.printers);
@@ -57,7 +70,15 @@ export default function App() {
   const reloadWorkspace = useCallback(async () => {
     setWorkspaceLoading(true);
     try {
-      const workspace = await loadWorkspace();
+      const memberships = await loadShopMemberships();
+      setShopOptions(memberships);
+      const selectedShopId = memberships.some((membership) => membership.shopId === activeShopId)
+        ? activeShopId
+        : memberships[0]?.shopId || '';
+      if (!selectedShopId) throw new Error('Your account is not assigned to a shop yet. Create or join a shop first.');
+      setActiveShopId(selectedShopId);
+      localStorage.setItem('printomatic.activeShopId', selectedShopId);
+      const workspace = await loadWorkspace(selectedShopId);
       setShopProfile(workspace.shop);
       setPrinters(workspace.printers);
       setJobs(workspace.jobs);
@@ -225,6 +246,26 @@ export default function App() {
       });
   }, [jobs, printers.length, handleUpdateJobStatus]);
 
+  const handleSelectShop = useCallback(async (shopId: string) => {
+    if (shopId === activeShopId) return;
+    localStorage.setItem('printomatic.activeShopId', shopId);
+    setActiveShopId(shopId);
+    setWorkspaceError('');
+    setWorkspaceLoading(true);
+    try {
+      const workspace = await loadWorkspace(shopId);
+      setShopProfile(workspace.shop);
+      setPrinters(workspace.printers);
+      setJobs(workspace.jobs);
+      setConnectedToCloud(true);
+    } catch (error) {
+      setConnectedToCloud(false);
+      setWorkspaceError(error instanceof Error ? error.message : 'Could not switch shop workspace.');
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }, [activeShopId]);
+
   const handleTopUpWallet = useCallback((amount: number) => {
     setShopProfile((prev) => ({ ...prev, subscription: { ...prev.subscription, prepaidWalletBalance: prev.subscription.prepaidWalletBalance + amount } }));
   }, []);
@@ -249,7 +290,7 @@ export default function App() {
       </div>
       <DesktopHeader shopName={shopProfile.shopName} isWhatsAppConnected={shopProfile.isWhatsAppConnected} activeJobsCount={activeQueueCount} />
         <div className="flex-1 flex overflow-hidden">
-          <NavigationSidebar currentTab={currentTab} setCurrentTab={setCurrentTab} shopProfile={shopProfile} activeQueueCount={activeQueueCount} readyForPickupCount={readyForPickupCount} onOpenSettings={() => setShowSettingsModal(true)} />
+          <NavigationSidebar currentTab={currentTab} setCurrentTab={setCurrentTab} shopProfile={shopProfile} activeQueueCount={activeQueueCount} readyForPickupCount={readyForPickupCount} onOpenSettings={() => setShowSettingsModal(true)} shopOptions={shopOptions} activeShopId={activeShopId} onSelectShop={handleSelectShop} />
           <main className="flex-1 overflow-y-auto p-6 bg-slate-950/90">
             <div className="max-w-7xl mx-auto space-y-6"><NativeFilePicker />
               {currentTab === 'spooler' && <SpoolerMonitor jobs={jobs} printers={printers} shopProfile={shopProfile} onUpdateJobStatus={handleUpdateJobStatus} onMarkStapled={handleMarkStapled} onOpenJobInspection={(job) => setInspectedJob(job)} onTriggerManualPrint={handleTriggerManualPrint} />}
