@@ -3,7 +3,7 @@ export type DuplexMode = 'single' | 'duplex';
 export type PagePerSide = 1 | 2 | 4;
 export type Orientation = 'portrait' | 'landscape';
 
-export type JobStatus = 'pending_quote' | 'pending_payment' | 'queued' | 'spooling' | 'printing' | 'printed_ready' | 'completed' | 'cancelled';
+export type JobStatus = 'pending_quote' | 'pending_payment' | 'queued' | 'spooling' | 'printing' | 'printed_ready' | 'completed' | 'cancelled' | 'failed';
 
 export interface PrintJob {
   id: string; localFileId?: string; tokenNumber: string; shortNumber?: string; customerName: string; customerPhone: string; fileName: string; fileSize: string;
