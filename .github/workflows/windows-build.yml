@@ -1,0 +1,47 @@
+name: AutoPrint OS Windows Build
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Build Windows installer
+        run: npm run desktop:dist
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoPrint-OS-Windows
+          path: release/*
+          if-no-files-found: error
+          retention-days: 14
