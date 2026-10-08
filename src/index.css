@@ -435,3 +435,14 @@ button { -webkit-tap-highlight-color: transparent; }
   .autoprint-sidebar-stats { padding-top: 6px; padding-bottom: 6px; }
   .autoprint-sidebar-footer { padding-bottom: 8px; }
 }
+
+
+:root[data-autoprint-theme="light"] .autoprint-nav-item { color: #475569; }
+:root[data-autoprint-theme="light"] .autoprint-nav-item:hover { color: #172033; }
+:root[data-autoprint-theme="light"] .autoprint-nav-label { color: #64748b; }
+:root[data-autoprint-theme="light"] .autoprint-sidebar-stats span,
+:root[data-autoprint-theme="light"] .autoprint-sidebar-wallet > div:first-child,
+:root[data-autoprint-theme="light"] .autoprint-online { color: #5b6475; }
+:root[data-autoprint-theme="light"] .autoprint-sidebar-stats b { color: #172033; }
+:root[data-autoprint-theme="light"] .autoprint-theme-option small { color: #5b6475; }
+:root[data-autoprint-theme="light"] .autoprint-theme-panel { background: #fff; }
