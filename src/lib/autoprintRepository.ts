@@ -133,8 +133,9 @@ export async function syncWhatsAppDocuments() {
         headers,
         body: JSON.stringify({ action: 'ack', document_id: document.id, local_file_id: importedFile.localFileId, device_id: deviceId }),
       });
-      if (!ackResponse.ok) throw new Error('Document was downloaded but could not be acknowledged.');
-      imported.push({ ...document, local_file_id: importedFile.localFileId, path: importedFile.path });
+      const ackData = await ackResponse.json().catch(() => ({}));
+      if (!ackResponse.ok) throw new Error(ackData?.error || 'Document was downloaded but could not be acknowledged.');
+      imported.push({ ...document, local_file_id: importedFile.localFileId, path: importedFile.path, print_job: ackData?.print_job || null });
     } catch (error) {
       failed += 1;
       console.error('WhatsApp document import failed', document.id, error);
