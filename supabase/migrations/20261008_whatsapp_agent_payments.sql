@@ -18,10 +18,14 @@ create unique index if not exists whatsapp_orders_payment_reference_uq
   on public.whatsapp_orders(payment_reference)
   where payment_reference is not null;
 
-alter table public.shop_settings
+alter table if exists public.shop_settings
   add column if not exists whatsapp_upi_id text,
   add column if not exists whatsapp_upi_name text;
 
 -- Keep payment/order transitions database-authoritative.
 create index if not exists whatsapp_orders_payment_status_idx
   on public.whatsapp_orders(shop_id, payment_status, status);
+
+insert into storage.buckets (id, name, public)
+values ('whatsapp-payment-qr', 'whatsapp-payment-qr', true)
+on conflict (id) do update set public = true;
