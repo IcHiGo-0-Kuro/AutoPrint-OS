@@ -4,7 +4,7 @@ import { ShopProfile } from '../types';
 import { formatINRCompact } from '../utils/format';
 
 export type NavTab = 'spooler' | 'whatsapp' | 'orders' | 'printers' | 'rates' | 'saas_billing';
-export type AppTheme = 'midnight' | 'graphite' | 'aurora' | 'light';
+export type AppTheme = 'graphite' | 'light' | 'hacker' | 'crimson';
 
 type P = {
   currentTab: NavTab;
@@ -19,15 +19,20 @@ type P = {
 };
 
 const themes: { id: AppTheme; label: string; description: string }[] = [
-  { id: 'midnight', label: 'Midnight', description: 'Deep indigo' },
-  { id: 'graphite', label: 'Graphite', description: 'Neutral dark' },
-  { id: 'aurora', label: 'Aurora', description: 'Cool teal' },
-  { id: 'light', label: 'Light', description: 'Bright workspace' },
+  { id: 'light', label: 'Bright', description: 'Clean light workspace' },
+  { id: 'graphite', label: 'Violet', description: 'Elegant violet accents' },
+  { id: 'hacker', label: 'Hacker Green', description: 'Pure black · neon green' },
+  { id: 'crimson', label: 'Crimson Red', description: 'Pure black · vivid red' },
 ];
 
 export function NavigationSidebar(p: P) {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('autoprint.sidebar.collapsed') === 'true');
-  const [theme, setTheme] = useState<AppTheme>(() => (localStorage.getItem('autoprint.theme') as AppTheme) || 'midnight');
+  const [theme, setTheme] = useState<AppTheme>(() => {
+    const saved = localStorage.getItem('autoprint.theme');
+    if (saved === 'midnight') return 'hacker';
+    if (saved === 'aurora') return 'crimson';
+    return saved === 'light' || saved === 'graphite' || saved === 'hacker' || saved === 'crimson' ? saved : 'graphite';
+  });
   const [showThemes, setShowThemes] = useState(false);
 
   useEffect(() => {
@@ -86,7 +91,7 @@ export function NavigationSidebar(p: P) {
           </div>
         ) : (
           <div className="w-full flex flex-col items-center gap-2">
-            <img src="/printomatic-logo.svg" alt="Printomatic" className="h-10 w-10 object-cover object-left" />
+            <img src="/printomatic-mark.svg" alt="Printomatic" className="h-10 w-10 object-contain" />
             <button className="autoprint-icon-button" onClick={() => setCollapsed(false)} title="Expand sidebar" aria-label="Expand sidebar">
               <ChevronRight className="w-4 h-4" />
             </button>
