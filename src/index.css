@@ -311,3 +311,127 @@ button { -webkit-tap-highlight-color: transparent; }
     transition-duration: .01ms !important;
   }
 }
+
+
+/* Printomatic theme refresh: fixed workspace layout and high-contrast palettes */
+:root[data-autoprint-theme="graphite"] {
+  --ap-bg: #0b0b12;
+  --ap-panel: #12111d;
+  --ap-panel-strong: #1b1928;
+  --ap-border: rgba(196, 181, 253, .16);
+  --ap-accent: #a78bfa;
+  --ap-accent-soft: rgba(167, 139, 250, .16);
+  --ap-glow: rgba(167, 139, 250, .2);
+}
+
+:root[data-autoprint-theme="hacker"] {
+  color-scheme: dark;
+  --ap-bg: #030604;
+  --ap-panel: #080d09;
+  --ap-panel-strong: #101a12;
+  --ap-border: rgba(57, 255, 20, .2);
+  --ap-accent: #39ff14;
+  --ap-accent-soft: rgba(57, 255, 20, .14);
+  --ap-glow: rgba(57, 255, 20, .24);
+}
+
+:root[data-autoprint-theme="crimson"] {
+  color-scheme: dark;
+  --ap-bg: #050303;
+  --ap-panel: #100808;
+  --ap-panel-strong: #1c0d0d;
+  --ap-border: rgba(255, 49, 49, .22);
+  --ap-accent: #ff3131;
+  --ap-accent-soft: rgba(255, 49, 49, .15);
+  --ap-glow: rgba(255, 49, 49, .24);
+}
+
+:root[data-autoprint-theme="light"] {
+  color-scheme: light;
+}
+
+.autoprint-shell {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.autoprint-shell > .flex-1 {
+  min-height: 0;
+}
+
+.autoprint-sidebar {
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.autoprint-sidebar-nav {
+  min-height: 0;
+  flex: 1 0 auto;
+  overflow: visible;
+}
+
+.autoprint-sidebar-brand img {
+  display: block;
+  max-width: 100%;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.autoprint-sidebar-brand > div:first-child > .flex:first-child {
+  min-width: 0;
+}
+
+.autoprint-sidebar-brand > div:first-child > .flex:first-child img {
+  width: min(190px, calc(100% - 42px));
+  height: 44px;
+  object-fit: contain;
+}
+
+.autoprint-theme-option b { color: #e2e8f0; }
+:root[data-autoprint-theme="light"] .autoprint-theme-option b { color: #172033; }
+:root[data-autoprint-theme="light"] .autoprint-theme-option small { color: #5b6475; }
+
+.theme-hacker { background: #39ff14; box-shadow: 0 0 12px rgba(57,255,20,.42); }
+.theme-crimson { background: #ff3131; box-shadow: 0 0 12px rgba(255,49,49,.4); }
+
+:root[data-autoprint-theme="hacker"] .autoprint-shell .bg-indigo-600,
+:root[data-autoprint-theme="crimson"] .autoprint-shell .bg-indigo-600 {
+  color: #050505 !important;
+  font-weight: 800;
+}
+
+:root[data-autoprint-theme="hacker"] .autoprint-nav-badge,
+:root[data-autoprint-theme="crimson"] .autoprint-nav-badge {
+  color: #050505;
+}
+
+:root[data-autoprint-theme="hacker"] .autoprint-sidebar-wallet b,
+:root[data-autoprint-theme="hacker"] .autoprint-online span {
+  color: #39ff14;
+}
+
+:root[data-autoprint-theme="hacker"] .autoprint-online span {
+  background: #39ff14;
+  box-shadow: 0 0 8px rgba(57,255,20,.65);
+}
+
+:root[data-autoprint-theme="crimson"] .autoprint-sidebar-wallet b {
+  color: #ff6565;
+}
+
+:root[data-autoprint-theme="light"] .autoprint-sidebar-stats b,
+:root[data-autoprint-theme="light"] .autoprint-theme-option b {
+  color: #172033;
+}
+
+@media (max-height: 650px) {
+  .autoprint-sidebar-brand { min-height: 58px; padding-top: 8px; padding-bottom: 8px; }
+  .autoprint-sidebar-stats { padding-top: 6px; padding-bottom: 6px; }
+  .autoprint-sidebar-footer { padding-bottom: 8px; }
+}
