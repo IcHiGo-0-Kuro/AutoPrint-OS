@@ -8,7 +8,8 @@ const formatSize = (bytes: unknown) => { const n = Number(bytes ?? 0); if (!n) r
 function uiJobStatus(status: string, hardcopy: string): PrintJob['jobStatus'] {
   if (status === 'printing') return 'printing';
   if (status === 'queued') return 'queued';
-  if (status === 'cancelled' || status === 'failed') return 'cancelled';
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'failed') return 'failed';
   if (status === 'completed' && hardcopy !== 'collected') return 'printed_ready';
   return 'completed';
 }
@@ -200,7 +201,7 @@ export async function updateStapled(jobId: string, value: boolean) {
 }
 export async function addPrinter(shopId: string, printer: PrinterDevice) {
   const session = getStoredSession(); if (!session) throw new Error('Not signed in.');
-  await db('/printers', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ id: printer.id, shop_id: shopId, user_id: session.user.id, printer_name: printer.name, brand: printer.brand, model: printer.model, connection_type: printer.connectionType, ip_or_port: printer.ipOrPort, supported_modes: printer.supportedModes, status: printer.status, paper_tray_sheets: printer.paperTraySheets, toner_level_percent: printer.tonerLevelPercent, is_active: true }) }, session);
+  await db('/printers', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ shop_id: shopId, user_id: session.user.id, printer_name: printer.name, brand: printer.brand, model: printer.model, connection_type: printer.connectionType, ip_or_port: printer.ipOrPort, supported_modes: printer.supportedModes, status: printer.status, paper_tray_sheets: printer.paperTraySheets, toner_level_percent: printer.tonerLevelPercent, is_active: true }) }, session);
 }
 export async function saveSettings(shop: ShopProfile) {
   const session = getStoredSession(); if (!session) throw new Error('Not signed in.');
