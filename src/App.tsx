@@ -209,18 +209,18 @@ export default function App() {
               soundManager.playPrintCompleted();
               handleUpdateJobStatus(jobId, 'printed_ready');
             } else {
-              handleUpdateJobStatus(jobId, 'cancelled');
+              handleUpdateJobStatus(jobId, 'failed');
               setWorkspaceError(current.error || 'Native print failed.');
             }
           } catch (error) {
             window.clearInterval(poll);
-            handleUpdateJobStatus(jobId, 'cancelled');
+            handleUpdateJobStatus(jobId, 'failed');
             setWorkspaceError(error instanceof Error ? error.message : 'Could not read native print queue.');
           }
         }, 1000);
       })
       .catch((error) => {
-        handleUpdateJobStatus(jobId, 'cancelled');
+        handleUpdateJobStatus(jobId, 'failed');
         setWorkspaceError(error instanceof Error ? error.message : 'Could not queue native print.');
       });
   }, [jobs, printers.length, handleUpdateJobStatus]);
