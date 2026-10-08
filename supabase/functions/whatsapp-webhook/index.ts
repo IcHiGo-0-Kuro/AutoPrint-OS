@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import QRCode from "npm:qrcode@1.5.4";
 import { getWhatsAppProvider } from "./provider.ts";
 
 const supabase = createClient(
@@ -56,14 +55,6 @@ function parseSides(value: string): "single" | "double" | null {
   return null;
 }
 
-function isYes(value: string) {
-  return ["yes", "y", "ok", "okay", "confirm", "confirmed", "correct", "proceed", "done"].includes(normalizeOption(value));
-}
-
-function isNo(value: string) {
-  return ["no", "n", "wrong", "change", "edit"].includes(normalizeOption(value));
-}
-
 async function sendProviderText(phoneNumberId: string, to: string, body: string, conversationId?: string) {
   const sent = await whatsappProvider.sendText(phoneNumberId, to, body);
   if (!sent) return false;
@@ -105,150 +96,10 @@ async function sendNextQuestion(phoneNumberId: string, customerNumber: string, c
     awaiting_paper: "Which paper size? Reply A4, A3, A5, Letter, or Legal.",
     awaiting_sides: "Single-sided or double-sided (duplex)?",
     awaiting_pages: "How many pages are in the document? Reply with a number.",
-    awaiting_payment: "Your quote is ready. Complete the payment using the QR code I sent. Payment is verified automatically; please do not send screenshots.",
+    awaiting_desktop_import: "Got it. Your print details are complete. I am preparing the document on the shop computer now.",
   };
   const body = prompts[step] || prompts.awaiting_document;
   await sendProviderText(phoneNumberId, customerNumber, body, conversationId);
-}
-
-function confirmationText(order: any) {
-  return [
-    `Printomatic order #${order.short_number || '----'} · ${order.token_number || 'token pending'}`,
-    "Please confirm your print order:",
-    `Name: ${order.customer_name || "—"}`,
-    `Pages: ${order.page_count || "—"}`,
-    `Copies: ${order.copies || "—"}`,
-    `Color: ${order.color_mode === "color" ? "Color" : "B&W"}`,
-    `Paper: ${order.paper_size || "—"}`,
-    `Sides: ${order.sides === "double" ? "Double-sided" : "Single-sided"}`,
-    "",
-    "Reply CONFIRM to place it in the order queue.",
-  ].join("\n");
-}
-
-function calculateAmount(order: any, rates: any) {
-  const pages = Math.max(1, Number(order.page_count) || 1);
-  const copies = Math.max(1, Number(order.copies) || 1);
-  const key = order.color_mode === "color"
-    ? (order.sides === "double" ? "color_duplex" : "color_single")
-    : (order.sides === "double" ? "bw_duplex" : "bw_single");
-  const rate = Number(rates?.[key] || 0);
-  const physicalSheets = order.sides === "double" ? Math.ceil(pages / 2) : pages;
-  return Number((physicalSheets * copies * rate).toFixed(2));
-}
-
-async function createPaymentQr(order: any, shopSettings: any) {
-  const upiVpa = String(shopSettings?.upi_vpa || "").trim();
-  if (!upiVpa) throw new Error("Shop payment UPI ID is not configured.");
-  const amount = Number(order.amount || 0);
-  if (!(amount > 0)) throw new Error("Order amount must be greater than zero.");
-  const reference = String(order.payment_reference || `PM-${crypto.randomUUID()}`).slice(0, 35);
-  const payeeName = String(shopSettings?.owner_name || "Printomatic").replace(/[&?=#]/g, " ").slice(0, 50);
-  const upiUrl = `upi://pay?pa=${encodeURIComponent(upiVpa)}&pn=${encodeURIComponent(payeeName)}&am=${amount.toFixed(2)}&cu=INR&tr=${encodeURIComponent(reference)}&tn=${encodeURIComponent("Printomatic " + (order.short_number || reference))}`;
-  const png = await QRCode.toBuffer(upiUrl, { type: "png", width: 512, margin: 2 });
-  const path = `${order.shop_id}/${reference}.png`;
-  const { error } = await supabase.storage.from("whatsapp-payment-qr").upload(path, png, {
-    contentType: "image/png",
-    cacheControl: "300",
-    upsert: true,
-  });
-  if (error) throw error;
-  const base = Deno.env.get("SUPABASE_URL")!.replace(/\/$/, "");
-  const imageUrl = `${base}/storage/v1/object/public/whatsapp-payment-qr/${encodeURIComponent(order.shop_id)}/${encodeURIComponent(reference)}.png`;
-  return { reference, imageUrl };
-}
-
-
-async function ensurePrintJobForOrder(order: any, shopId: string, customerNumber: string) {
-  const { data: document, error: documentError } = await supabase
-    .from("whatsapp_documents")
-    .select("id,document_name,mime_type,size_bytes,local_file_id,intake_status")
-    .eq("order_id", order.id)
-    .eq("shop_id", shopId)
-    .eq("intake_status", "available_locally")
-    .not("local_file_id", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (documentError) throw documentError;
-  if (!document?.local_file_id) return null;
-
-  const { data: existing } = await supabase
-    .from("print_jobs")
-    .select("id")
-    .eq("source_whatsapp_order_id", order.id)
-    .maybeSingle();
-  if (existing) return existing.id;
-
-  const { data: member } = await supabase
-    .from("shop_members")
-    .select("user_id")
-    .eq("shop_id", shopId)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  const { data: printer } = await supabase
-    .from("printers")
-    .select("id")
-    .eq("shop_id", shopId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  const { data: maxRow } = await supabase
-    .from("print_jobs")
-    .select("queue_number")
-    .eq("shop_id", shopId)
-    .order("queue_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!member?.user_id) throw new Error("No shop member is available to own the print job.");
-
-  const { data: job, error: jobError } = await supabase
-    .from("print_jobs")
-    .insert({
-      user_id: member.user_id,
-      created_by: member.user_id,
-      shop_id: shopId,
-      printer_id: printer?.id || null,
-      document_name: document.document_name,
-      queue_number: Number(maxRow?.queue_number || 0) + 1,
-      print_count: Math.max(1, Math.min(999, Number(order.copies) || 1)),
-      copies: Math.max(1, Math.min(999, Number(order.copies) || 1)),
-      color_mode: order.color_mode === "color" ? "color" : "black_white",
-      orientation: "portrait",
-      pages_per_copy: 1,
-      sides: order.sides === "double" ? "double" : "single",
-      skip_pages: [],
-      price: 0,
-      payment: "pending",
-      status: "queued",
-      hardcopy_status: "not_required",
-      local_file_id: document.local_file_id,
-      local_file_name: document.document_name,
-      document_size_bytes: document.size_bytes,
-      document_mime_type: document.mime_type,
-      customer_name: order.customer_name,
-      customer_phone: customerNumber,
-      token_number: order.token_number,
-      short_number: order.short_number,
-      header_stamped: true,
-      separator_sheet_included: true,
-      total_pages_to_print: 1,
-      source_whatsapp_order_id: order.id,
-      notes: "WhatsApp MVP order bridge; payment gate can be added before production.",
-    })
-    .select("id")
-    .single();
-  if (jobError) throw jobError;
-
-  await supabase
-    .from("whatsapp_orders")
-    .update({ status: "queued", updated_at: new Date().toISOString() })
-    .eq("id", order.id);
-
-  return job.id;
 }
 
 Deno.serve(async (request) => {
@@ -367,9 +218,8 @@ Deno.serve(async (request) => {
       order = created.data;
     }
 
-    // Phase 2: guided order agent. It collects the minimum print specification
-    // before an order can enter the quote/print pipeline. Payment and native
-    // desktop import remain later phases.
+    // Guided order agent: collect the print specification first. Payment is intentionally
+    // disabled for the working MVP; a completed specification becomes a desktop print job.
     let nextStep = conversation.current_step || order.intake_step || "awaiting_document";
 
     if (type === "document" || type === "image" || type === "video") {
@@ -443,58 +293,13 @@ Deno.serve(async (request) => {
           await sendProviderText(phoneNumberId, customerNumber, "Please reply with the number of pages, for example: 6", conversation.id);
           return json({ ok: true, order_id: order.id, step: nextStep });
         }
-        const { data: shopSettings } = await supabase.from("shop_settings")
-          .select("owner_name,upi_vpa,bw_single,bw_duplex,color_single,color_duplex")
-          .eq("shop_id", connection.shop_id).maybeSingle();
-        const amount = calculateAmount({ ...order, page_count: pageCount }, shopSettings);
-        if (!(amount > 0)) throw new Error("Shop print rates are not configured.");
-        const paymentReference = `PM-${crypto.randomUUID().replace(/-/g, "").slice(0, 28)}`;
         await supabase.from("whatsapp_orders").update({
           page_count: pageCount,
-          amount,
-          currency: "INR",
-          payment_status: "pending",
-          payment_reference: paymentReference,
-          status: "quoted",
-          intake_step: "awaiting_payment",
-          quoted_at: new Date().toISOString(),
+          status: "ready_for_quote",
+          intake_step: "awaiting_desktop_import",
+          updated_at: new Date().toISOString(),
         }).eq("id", order.id);
-        const qr = await createPaymentQr({ ...order, shop_id: connection.shop_id, page_count: pageCount, amount, payment_reference: paymentReference }, shopSettings);
-        await supabase.from("whatsapp_orders").update({ payment_qr_path: qr.imageUrl }).eq("id", order.id);
-        await sendProviderText(phoneNumberId, customerNumber, `Quote for order #${order.short_number || "----"}: ₹${amount.toFixed(2)}. Scan the QR code in the next message. Payment is verified automatically.`, conversation.id);
-        await sendProviderImage(phoneNumberId, customerNumber, qr.imageUrl, `Pay ₹${amount.toFixed(2)} · Ref ${paymentReference}`, conversation.id);
-        nextStep = "awaiting_payment";
-      } else if (nextStep === "awaiting_payment") {
-        await sendProviderText(phoneNumberId, customerNumber, "Payment is verified automatically by the payment gateway. Please complete the QR payment; do not send a screenshot.", conversation.id);
-        return json({ ok: true, order_id: order.id, step: nextStep });
-      } else if (nextStep === "awaiting_confirmation") {
-        if (isYes(textBody)) {
-          await supabase.from("whatsapp_orders").update({
-            status: "ready_for_quote",
-            intake_step: "confirmed",
-          }).eq("id", order.id);
-
-          const printJobId = await ensurePrintJobForOrder(order, connection.shop_id, customerNumber);
-
-          await supabase.from("whatsapp_conversations").update({
-            status: "waiting",
-            current_step: "confirmed",
-            last_message_at: new Date().toISOString(),
-          }).eq("id", conversation.id);
-
-          const confirmation = printJobId
-            ? `Order #${order.short_number || "----"} confirmed and queued for Printomatic. Keep this number for pickup.`
-            : `Order #${order.short_number || "----"} confirmed. Your document is downloaded locally and will enter the Printomatic queue as soon as it is available.`;
-          await sendProviderText(phoneNumberId, customerNumber, confirmation, conversation.id);
-          return json({ ok: true, order_id: order.id, print_job_id: printJobId, step: "confirmed" });
-        }
-        if (isNo(textBody)) {
-          await supabase.from("whatsapp_orders").update({ intake_step: "awaiting_copies" }).eq("id", order.id);
-          nextStep = "awaiting_copies";
-        } else {
-          await sendProviderText(phoneNumberId, customerNumber, "Reply CONFIRM to place the order, or CHANGE to edit the print options.", conversation.id);
-          return json({ ok: true, order_id: order.id, step: nextStep });
-        }
+        nextStep = "awaiting_desktop_import";
       }
     }
 
@@ -509,10 +314,7 @@ Deno.serve(async (request) => {
       .single();
     if (refreshed.error) throw refreshed.error;
 
-    if (nextStep === "awaiting_confirmation") {
-      await sendProviderText(phoneNumberId, customerNumber, confirmationText(refreshed.data), conversation.id);
-    } else {
-      await sendNextQuestion(phoneNumberId, customerNumber, conversation.id, nextStep);
+    await sendNextQuestion(phoneNumberId, customerNumber, conversation.id, nextStep);
     }
 
     return json({ ok: true, order_id: order.id, step: nextStep });
