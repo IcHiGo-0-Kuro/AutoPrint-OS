@@ -63,6 +63,14 @@
     },
     "directories": {
       "output": "release"
-    }
+    },
+    "protocols": [
+      {
+        "name": "Printomatic Authentication",
+        "schemes": [
+          "printomatic"
+        ]
+      }
+    ]
   }
 }
