@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('autoPrintNative', {
   },
   print: {
     enqueue: (input) => ipcRenderer.invoke('print:enqueue', input),
+    createPreview: (input) => ipcRenderer.invoke('print:create-preview', input),
     createTestDocument: () => ipcRenderer.invoke('print:test-document'),
     queue: () => ipcRenderer.invoke('print:queue'),
   },
