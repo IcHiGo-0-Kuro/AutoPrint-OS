@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import QRCode from "npm:qrcode@1.5.4";
 import { getWhatsAppProvider } from "./provider.ts";
 
 const supabase = createClient(
@@ -79,6 +80,22 @@ async function sendProviderText(phoneNumberId: string, to: string, body: string,
   return true;
 }
 
+async function sendProviderImage(phoneNumberId: string, to: string, imageUrl: string, caption: string, conversationId?: string) {
+  const sent = await whatsappProvider.sendImage(phoneNumberId, to, imageUrl, caption);
+  if (!sent) return false;
+  if (conversationId) {
+    const result = await supabase.from("whatsapp_messages").insert({
+      conversation_id: conversationId,
+      direction: "outbound",
+      message_type: "image",
+      text_body: caption,
+      metadata: { provider: whatsappProvider.name, image_url: imageUrl },
+    });
+    if (result.error) console.error("Could not log outbound WhatsApp QR message", result.error);
+  }
+  return true;
+}
+
 async function sendNextQuestion(phoneNumberId: string, customerNumber: string, conversationId: string, step: string) {
   const prompts: Record<string, string> = {
     awaiting_document: "Please send the document you want to print (PDF, image, or supported file).",
@@ -87,7 +104,8 @@ async function sendNextQuestion(phoneNumberId: string, customerNumber: string, c
     awaiting_color: "Print mode? Reply B&W or Color.",
     awaiting_paper: "Which paper size? Reply A4, A3, A5, Letter, or Legal.",
     awaiting_sides: "Single-sided or double-sided (duplex)?",
-    awaiting_confirmation: "Please reply CONFIRM to place this order, or CHANGE to edit the options.",
+    awaiting_pages: "How many pages are in the document? Reply with a number.",
+    awaiting_payment: "Your quote is ready. Complete the payment using the QR code I sent. Payment is verified automatically; please do not send screenshots.",
   };
   const body = prompts[step] || prompts.awaiting_document;
   await sendProviderText(phoneNumberId, customerNumber, body, conversationId);
@@ -98,13 +116,46 @@ function confirmationText(order: any) {
     `Printomatic order #${order.short_number || '----'} · ${order.token_number || 'token pending'}`,
     "Please confirm your print order:",
     `Name: ${order.customer_name || "—"}`,
+    `Pages: ${order.page_count || "—"}`,
     `Copies: ${order.copies || "—"}`,
     `Color: ${order.color_mode === "color" ? "Color" : "B&W"}`,
     `Paper: ${order.paper_size || "—"}`,
     `Sides: ${order.sides === "double" ? "Double-sided" : "Single-sided"}`,
     "",
-    "Reply CONFIRM to place it in the AutoPrint order queue, or CHANGE to edit.",
+    "Reply CONFIRM to place it in the order queue.",
   ].join("\n");
+}
+
+function calculateAmount(order: any, rates: any) {
+  const pages = Math.max(1, Number(order.page_count) || 1);
+  const copies = Math.max(1, Number(order.copies) || 1);
+  const key = order.color_mode === "color"
+    ? (order.sides === "double" ? "color_duplex" : "color_single")
+    : (order.sides === "double" ? "bw_duplex" : "bw_single");
+  const rate = Number(rates?.[key] || 0);
+  const physicalSheets = order.sides === "double" ? Math.ceil(pages / 2) : pages;
+  return Number((physicalSheets * copies * rate).toFixed(2));
+}
+
+async function createPaymentQr(order: any, shopSettings: any) {
+  const upiVpa = String(shopSettings?.upi_vpa || "").trim();
+  if (!upiVpa) throw new Error("Shop payment UPI ID is not configured.");
+  const amount = Number(order.amount || 0);
+  if (!(amount > 0)) throw new Error("Order amount must be greater than zero.");
+  const reference = String(order.payment_reference || `PM-${crypto.randomUUID()}`).slice(0, 35);
+  const payeeName = String(shopSettings?.owner_name || "Printomatic").replace(/[&?=#]/g, " ").slice(0, 50);
+  const upiUrl = `upi://pay?pa=${encodeURIComponent(upiVpa)}&pn=${encodeURIComponent(payeeName)}&am=${amount.toFixed(2)}&cu=INR&tr=${encodeURIComponent(reference)}&tn=${encodeURIComponent("Printomatic " + (order.short_number || reference))}`;
+  const svg = await QRCode.toString(upiUrl, { type: "svg", width: 512, margin: 2 });
+  const path = `${order.shop_id}/${reference}.svg`;
+  const { error } = await supabase.storage.from("whatsapp-payment-qr").upload(path, new Blob([svg], { type: "image/svg+xml" }), {
+    contentType: "image/svg+xml",
+    cacheControl: "300",
+    upsert: true,
+  });
+  if (error) throw error;
+  const base = Deno.env.get("SUPABASE_URL")!.replace(/\/$/, "");
+  const imageUrl = `${base}/storage/v1/object/public/whatsapp-payment-qr/${encodeURIComponent(order.shop_id)}/${encodeURIComponent(reference)}.svg`;
+  return { reference, imageUrl };
 }
 
 
@@ -294,7 +345,7 @@ Deno.serve(async (request) => {
 
     let { data: order } = await supabase
       .from("whatsapp_orders")
-      .select("id,intake_step,status,customer_name,copies,color_mode,paper_size,sides,token_number,short_number")
+      .select("id,intake_step,status,customer_name,copies,color_mode,paper_size,sides,page_count,amount,payment_status,payment_reference,token_number,short_number")
       .eq("conversation_id", conversation.id)
       .in("status", ["collecting_details", "document_received", "ready_for_quote", "quoted"])
       .order("created_at", { ascending: false })
@@ -384,8 +435,38 @@ Deno.serve(async (request) => {
           await sendProviderText(phoneNumberId, customerNumber, "Please reply Single-sided or Double-sided.", conversation.id);
           return json({ ok: true, order_id: order.id, step: nextStep });
         }
-        await supabase.from("whatsapp_orders").update({ sides, intake_step: "awaiting_confirmation" }).eq("id", order.id);
-        nextStep = "awaiting_confirmation";
+        await supabase.from("whatsapp_orders").update({ sides, intake_step: "awaiting_pages" }).eq("id", order.id);
+        nextStep = "awaiting_pages";
+      } else if (nextStep === "awaiting_pages") {
+        const pageCount = parsePositiveInt(textBody);
+        if (!pageCount) {
+          await sendProviderText(phoneNumberId, customerNumber, "Please reply with the number of pages, for example: 6", conversation.id);
+          return json({ ok: true, order_id: order.id, step: nextStep });
+        }
+        const { data: shopSettings } = await supabase.from("shop_settings")
+          .select("owner_name,upi_vpa,bw_single,bw_duplex,color_single,color_duplex")
+          .eq("shop_id", connection.shop_id).maybeSingle();
+        const amount = calculateAmount({ ...order, page_count: pageCount }, shopSettings);
+        if (!(amount > 0)) throw new Error("Shop print rates are not configured.");
+        const paymentReference = `PM-${crypto.randomUUID().replace(/-/g, "").slice(0, 28)}`;
+        await supabase.from("whatsapp_orders").update({
+          page_count: pageCount,
+          amount,
+          currency: "INR",
+          payment_status: "pending",
+          payment_reference: paymentReference,
+          status: "quoted",
+          intake_step: "awaiting_payment",
+          quoted_at: new Date().toISOString(),
+        }).eq("id", order.id);
+        const qr = await createPaymentQr({ ...order, shop_id: connection.shop_id, page_count: pageCount, amount, payment_reference: paymentReference }, shopSettings);
+        await supabase.from("whatsapp_orders").update({ payment_qr_path: qr.imageUrl }).eq("id", order.id);
+        await sendProviderText(phoneNumberId, customerNumber, `Quote for order #${order.short_number || "----"}: ₹${amount.toFixed(2)}. Scan the QR code in the next message. Payment is verified automatically.`, conversation.id);
+        await sendProviderImage(phoneNumberId, customerNumber, qr.imageUrl, `Pay ₹${amount.toFixed(2)} · Ref ${paymentReference}`, conversation.id);
+        nextStep = "awaiting_payment";
+      } else if (nextStep === "awaiting_payment") {
+        await sendProviderText(phoneNumberId, customerNumber, "Payment is verified automatically by the payment gateway. Please complete the QR payment; do not send a screenshot.", conversation.id);
+        return json({ ok: true, order_id: order.id, step: nextStep });
       } else if (nextStep === "awaiting_confirmation") {
         if (isYes(textBody)) {
           await supabase.from("whatsapp_orders").update({
@@ -423,7 +504,7 @@ Deno.serve(async (request) => {
     }).eq("id", conversation.id);
 
     const refreshed = await supabase.from("whatsapp_orders")
-      .select("customer_name,copies,color_mode,paper_size,sides,token_number,short_number")
+      .select("customer_name,copies,color_mode,paper_size,sides,page_count,amount,payment_status,payment_reference,token_number,short_number")
       .eq("id", order.id)
       .single();
     if (refreshed.error) throw refreshed.error;
