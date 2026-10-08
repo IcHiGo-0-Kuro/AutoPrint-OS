@@ -55,6 +55,25 @@ function parseSides(value: string): "single" | "double" | null {
   return null;
 }
 
+async function verifyMetaSignature(rawBody: string, signature: string) {
+  const secret = Deno.env.get("WHATSAPP_APP_SECRET") || "";
+  if (!secret || !signature.startsWith("sha256=")) return false;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody)));
+  const suppliedHex = signature.slice(7).trim().toLowerCase();
+  const supplied = suppliedHex.match(/.{1,2}/g)?.map((part) => parseInt(part, 16)) || [];
+  if (supplied.length !== mac.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < mac.length; i++) mismatch |= mac[i] ^ supplied[i];
+  return mismatch === 0;
+}
+
 async function sendProviderText(phoneNumberId: string, to: string, body: string, conversationId?: string) {
   const sent = await whatsappProvider.sendText(phoneNumberId, to, body);
   if (!sent) return false;
@@ -114,7 +133,12 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
   try {
-    const payload = await request.json();
+    const rawBody = await request.text();
+    const signature = request.headers.get("x-hub-signature-256") || "";
+    if (!(await verifyMetaSignature(rawBody, signature))) {
+      return json({ ok: false, error: "Invalid WhatsApp webhook signature." }, 401);
+    }
+    const payload = JSON.parse(rawBody);
     const incoming = whatsappProvider.extractIncoming(payload);
     if (!incoming) return json({ ok: true, ignored: true });
 
