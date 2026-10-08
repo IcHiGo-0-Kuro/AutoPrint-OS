@@ -108,10 +108,25 @@ export default function App() {
         if (result.documents.length && printers.length === 0) {
           for (const document of result.documents) {
             try {
-              if (document.path) await window.autoPrintNative?.files.open(document.path);
+              const job = document.print_job;
+              if (job) {
+                await window.autoPrintNative?.print.createPreview({
+                  jobId: job.id,
+                  fileName: job.document_name || document.document_name,
+                  paperSize: job.paper_size || 'A4',
+                  colorMode: job.color_mode === 'color' ? 'color' : 'bw',
+                  sides: job.sides || 'single',
+                  copies: job.copies || 1,
+                  pageCount: job.pages_per_copy || job.total_pages_to_print || 1,
+                  shortNumber: job.short_number || '',
+                  tokenNumber: job.token_number || '',
+                });
+              } else if (document.path) {
+                await window.autoPrintNative?.files.open(document.path);
+              }
               await notifyNoPrinter(document.id);
             } catch (error) {
-              if (active) setWorkspaceError(error instanceof Error ? error.message : 'Could not open the WhatsApp document.');
+              if (active) setWorkspaceError(error instanceof Error ? error.message : 'Could not open the WhatsApp print preview.');
             }
           }
         }
