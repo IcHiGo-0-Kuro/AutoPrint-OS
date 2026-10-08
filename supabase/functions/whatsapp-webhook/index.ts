@@ -145,16 +145,16 @@ async function createPaymentQr(order: any, shopSettings: any) {
   const reference = String(order.payment_reference || `PM-${crypto.randomUUID()}`).slice(0, 35);
   const payeeName = String(shopSettings?.owner_name || "Printomatic").replace(/[&?=#]/g, " ").slice(0, 50);
   const upiUrl = `upi://pay?pa=${encodeURIComponent(upiVpa)}&pn=${encodeURIComponent(payeeName)}&am=${amount.toFixed(2)}&cu=INR&tr=${encodeURIComponent(reference)}&tn=${encodeURIComponent("Printomatic " + (order.short_number || reference))}`;
-  const svg = await QRCode.toString(upiUrl, { type: "svg", width: 512, margin: 2 });
-  const path = `${order.shop_id}/${reference}.svg`;
-  const { error } = await supabase.storage.from("whatsapp-payment-qr").upload(path, new Blob([svg], { type: "image/svg+xml" }), {
-    contentType: "image/svg+xml",
+  const png = await QRCode.toBuffer(upiUrl, { type: "png", width: 512, margin: 2 });
+  const path = `${order.shop_id}/${reference}.png`;
+  const { error } = await supabase.storage.from("whatsapp-payment-qr").upload(path, png, {
+    contentType: "image/png",
     cacheControl: "300",
     upsert: true,
   });
   if (error) throw error;
   const base = Deno.env.get("SUPABASE_URL")!.replace(/\/$/, "");
-  const imageUrl = `${base}/storage/v1/object/public/whatsapp-payment-qr/${encodeURIComponent(order.shop_id)}/${encodeURIComponent(reference)}.svg`;
+  const imageUrl = `${base}/storage/v1/object/public/whatsapp-payment-qr/${encodeURIComponent(order.shop_id)}/${encodeURIComponent(reference)}.png`;
   return { reference, imageUrl };
 }
 
