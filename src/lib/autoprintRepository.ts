@@ -1,4 +1,4 @@
-import { db, getStoredSession } from './supabase';
+import { db, getStoredSession, refreshSession } from './supabase';
 import { getLocalFilePath } from './localStore';
 import { PrintJob, PrinterDevice, ShopProfile } from '../types';
 
@@ -215,13 +215,18 @@ export async function createShop(
   whatsappNumber: string,
   selectedPrinters: Array<{ name: string; driver: string; port: string; offline: boolean }>
 ) {
-  const session = getStoredSession(); if (!session) throw new Error('Not signed in.');
-  const shops = await db<any[]>('/shops', {
+  // Shop creation uses a SECURITY DEFINER RPC so the initial INSERT is not
+  // blocked by the shops table's strict owner_id RLS policy. Refresh first so
+  // auth.uid() is evaluated from a current access token.
+  const storedSession = getStoredSession();
+  if (!storedSession) throw new Error('Not signed in.');
+  const session = await refreshSession();
+  const shop = await db<any>('/rpc/create_shop_for_current_user', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ name, owner_id: session.user.id })
+    body: JSON.stringify({ p_name: name })
   }, session);
-  const shop = shops[0]; if (!shop) throw new Error('Shop creation returned no shop.');
+  if (!shop?.id) throw new Error('Shop creation returned no shop.');
 
   await db('/shop_members', {
     method: 'POST',
