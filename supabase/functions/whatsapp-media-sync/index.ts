@@ -117,45 +117,93 @@ Deno.serve(async (request) => {
     if (error) return json({ error: "Could not acknowledge the local document." }, 500);
 
     const { data: order, error: orderError } = await admin.from("whatsapp_orders")
-      .select("id,shop_id,status,customer_name,copies,color_mode,sides,page_count,amount,payment_status,token_number,short_number")
+      .select("id,shop_id,status,intake_step,customer_name,customer_phone,copies,color_mode,paper_size,sides,page_count,amount,payment_status,token_number,short_number")
       .eq("id", document.order_id).maybeSingle();
     if (orderError) return json({ error: "Could not load the WhatsApp order." }, 500);
 
     let printJobId = null;
-    if (order && order.payment_status === "paid" && ["paid", "queued", "printing"].includes(order.status)) {
-      const { data: existing } = await admin.from("print_jobs").select("id").eq("source_whatsapp_order_id", order.id).maybeSingle();
+    let printJob = null;
+    const detailsComplete = order && order.intake_step === "awaiting_desktop_import";
+    if (order && detailsComplete) {
+      const { data: existing } = await admin.from("print_jobs")
+        .select("id")
+        .eq("source_whatsapp_order_id", order.id)
+        .maybeSingle();
+
       if (existing) {
         printJobId = existing.id;
-        await admin.from("print_jobs").update({
+      } else {
+        const { data: member } = await admin.from("shop_members")
+          .select("user_id")
+          .eq("shop_id", order.shop_id)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        const { data: printer } = await admin.from("printers")
+          .select("id")
+          .eq("shop_id", order.shop_id)
+          .eq("is_active", true)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        const { data: maxRow } = await admin.from("print_jobs")
+          .select("queue_number")
+          .eq("shop_id", order.shop_id)
+          .order("queue_number", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!member?.user_id) return json({ error: "No shop member is available to own the print job." }, 500);
+
+        const copies = Math.max(1, Math.min(999, Number(order.copies) || 1));
+        const pageCount = Math.max(1, Number(order.page_count) || 1);
+        const { data: job, error: jobError } = await admin.from("print_jobs").insert({
+          user_id: member.user_id,
+          created_by: member.user_id,
+          shop_id: order.shop_id,
+          printer_id: printer?.id || null,
+          document_name: document.document_name,
+          queue_number: Number(maxRow?.queue_number || 0) + 1,
+          print_count: copies,
+          copies,
+          color_mode: order.color_mode === "color" ? "color" : "black_white",
+          orientation: "portrait",
+          pages_per_copy: pageCount,
+          sides: order.sides === "double" ? "double" : "single",
+          skip_pages: [],
+          price: 0,
+          payment: "pending",
+          status: "queued",
+          hardcopy_status: "not_required",
           local_file_id: localFileId,
           local_file_name: document.document_name,
           document_size_bytes: document.size_bytes,
           document_mime_type: document.mime_type,
-          updated_at: new Date().toISOString(),
-        }).eq("id", existing.id);
-      } else {
-        const { data: member } = await admin.from("shop_members").select("user_id").eq("shop_id", order.shop_id).order("created_at", { ascending: true }).limit(1).maybeSingle();
-        const { data: printer } = await admin.from("printers").select("id").eq("shop_id", order.shop_id).eq("is_active", true).order("created_at", { ascending: true }).limit(1).maybeSingle();
-        const { data: maxRow } = await admin.from("print_jobs").select("queue_number").eq("shop_id", order.shop_id).order("queue_number", { ascending: false }).limit(1).maybeSingle();
-        if (!member?.user_id) return json({ error: "No shop member is available to own the print job." }, 500);
-        const { data: job, error: jobError } = await admin.from("print_jobs").insert({
-          user_id: member.user_id, created_by: member.user_id, shop_id: order.shop_id, printer_id: printer?.id || null,
-          document_name: document.document_name, queue_number: Number(maxRow?.queue_number || 0) + 1,
-          print_count: Math.max(1, Math.min(999, Number(order.copies) || 1)), copies: Math.max(1, Math.min(999, Number(order.copies) || 1)),
-          color_mode: order.color_mode === "color" ? "color" : "black_white", orientation: "portrait", pages_per_copy: 1,
-          sides: order.sides === "double" ? "double" : "single", skip_pages: [], price: Number(order.amount || 0), payment: "paid", status: "queued",
-          hardcopy_status: "not_required", local_file_id: localFileId, local_file_name: document.document_name,
-          document_size_bytes: document.size_bytes, document_mime_type: document.mime_type, customer_name: order.customer_name,
-          token_number: order.token_number, short_number: order.short_number, header_stamped: true, separator_sheet_included: true,
-          total_pages_to_print: Number(order.page_count || 1) * Math.max(1, Math.min(999, Number(order.copies) || 1)), source_whatsapp_order_id: order.id,
-          notes: "WhatsApp Agent paid order.",
-        }).select("id").single();
+          customer_name: order.customer_name,
+          customer_phone: order.customer_phone || null,
+          token_number: order.token_number,
+          short_number: order.short_number,
+          header_stamped: true,
+          separator_sheet_included: true,
+          total_pages_to_print: pageCount * copies,
+          source_whatsapp_order_id: order.id,
+          notes: "WhatsApp Agent MVP order. Payment is disabled for this working model.",
+        }).select("*").single();
         if (jobError) return json({ error: "Could not create the print job: " + jobError.message }, 500);
         printJobId = job.id;
-        await admin.from("whatsapp_orders").update({ status: "queued", updated_at: new Date().toISOString() }).eq("id", order.id);
+        printJob = job;
+        await admin.from("whatsapp_orders").update({
+          status: "queued",
+          intake_step: "queued",
+          updated_at: new Date().toISOString(),
+        }).eq("id", order.id);
       }
     }
-    return json({ ok: true, print_job_id: printJobId });
+
+    if (!printJob && printJobId) {
+      const { data: existingJob } = await admin.from("print_jobs").select("*").eq("id", printJobId).maybeSingle();
+      printJob = existingJob;
+    }
+
   }
 
   if (action === "notify_no_printer") {
