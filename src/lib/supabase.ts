@@ -116,13 +116,22 @@ async function getValidSession():Promise<Session>{
   return current;
 }
 
+const ELECTRON_RECOVERY_REDIRECT = 'printomatic://auth/recovery';
+
+function isElectronRuntime(){
+  if(typeof window==='undefined') return false;
+  return Boolean(window.autoPrintNative)
+    || window.location.protocol === 'file:'
+    || window.navigator.userAgent.includes('Electron');
+}
+
 function getRecoveryRedirectUrl(){
-  if(typeof window==='undefined') return 'printomatic://auth/recovery';
-  const isElectron = window.location.protocol === 'file:' || window.navigator.userAgent.includes('Electron');
-  if(isElectron) return 'printomatic://auth/recovery';
-  return window.location.protocol === 'http:' || window.location.protocol === 'https:'
-    ? window.location.origin
-    : 'printomatic://auth/recovery';
+  if(isElectronRuntime()) return ELECTRON_RECOVERY_REDIRECT;
+  if(typeof window==='undefined') return ELECTRON_RECOVERY_REDIRECT;
+  if(window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+    return window.location.origin;
+  }
+  return ELECTRON_RECOVERY_REDIRECT;
 }
 
 export async function sendPasswordRecoveryCode(email:string){
