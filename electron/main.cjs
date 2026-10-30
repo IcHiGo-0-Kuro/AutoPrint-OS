@@ -73,9 +73,37 @@ function getOrCreateDeviceId() {
   return registry.deviceId;
 }
 
-async function downloadRemoteFile(url, suggestedName, expectedSize, token) {
-  if (typeof url !== 'string' || !url.startsWith('https://')) throw new Error('Only HTTPS document downloads are allowed.');
-  const response = await fetch(url, { method: 'POST', redirect: 'follow', headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}), 'content-type': 'application/json' }, body: JSON.stringify(arguments[4] || {}) });
+async function downloadRemoteFile(url, suggestedName, expectedSize, token, requestBody = {}) {
+  // The desktop process receives this URL from the renderer. Never let it use
+  // the user's bearer token to call an arbitrary HTTPS host or follow redirects.
+  const configuredSupabaseUrl = process.env.VITE_SUPABASE_URL || 'https://ngdbwujpfbsgzfwfmddq.supabase.co';
+  const expectedOrigin = new URL(configuredSupabaseUrl).origin;
+  let target;
+  try {
+    target = new URL(url);
+  } catch {
+    throw new Error('Invalid document download URL.');
+  }
+  if (
+    target.protocol !== 'https:' ||
+    target.origin !== expectedOrigin ||
+    target.pathname !== '/functions/v1/whatsapp-media-sync' ||
+    target.username ||
+    target.password ||
+    target.search ||
+    target.hash
+  ) {
+    throw new Error('Document downloads must use the configured Supabase media endpoint.');
+  }
+  if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody) || requestBody.action !== 'download' || typeof requestBody.document_id !== 'string' || !requestBody.document_id.trim()) {
+    throw new Error('Invalid document download payload.');
+  }
+  const response = await fetch(target.toString(), {
+    method: 'POST',
+    redirect: 'error',
+    headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}), 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'download', document_id: requestBody.document_id }),
+  });
   if (!response.ok) throw new Error('Document download failed with HTTP ' + response.status + '.');
   const contentLength = Number(response.headers.get('content-length') || 0);
   const maxBytes = 50 * 1024 * 1024;
