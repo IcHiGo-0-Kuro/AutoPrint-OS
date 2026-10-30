@@ -204,6 +204,13 @@ Deno.serve(async (request) => {
       printJob = existingJob;
     }
 
+    return json({
+      ok: true,
+      document_id: document.id,
+      local_file_id: localFileId,
+      print_job_id: printJobId,
+      print_job: printJob,
+    });
   }
 
   if (action === "notify_no_printer") {
