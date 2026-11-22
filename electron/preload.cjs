@@ -11,7 +11,6 @@ contextBridge.exposeInMainWorld('autoPrintNative', {
     resolve: (localFileId) => ipcRenderer.invoke('files:resolve', localFileId),
     open: (filePath) => ipcRenderer.invoke('files:open', filePath),
     importRemote: (input) => ipcRenderer.invoke('files:importRemote', input),
-    download: (input) => ipcRenderer.invoke('files:download', input),
   },
   print: {
     enqueue: (input) => ipcRenderer.invoke('print:enqueue', input),

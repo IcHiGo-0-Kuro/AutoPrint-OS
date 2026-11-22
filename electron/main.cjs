@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron');
 const path = require('path');
 
 const RECOVERY_PROTOCOL = 'printomatic';
@@ -41,6 +41,10 @@ if (!gotSingleInstanceLock) {
   captureRecoveryUrl(process.argv);
   app.on('second-instance', (_event, commandLine) => {
     captureRecoveryUrl(commandLine);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
   });
 }
 const fs = require('fs');
@@ -48,6 +52,125 @@ const os = require('os');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const { fileURLToPath } = require('url');
+
+const DEV_ORIGIN = 'http://localhost:3000';
+const DIST_INDEX = path.resolve(__dirname, '../dist/index.html');
+
+// ---------------------------------------------------------------------------
+// Security helpers
+// ---------------------------------------------------------------------------
+
+// Only document types a print shop actually prints. Customers control the
+// name of every file that arrives over WhatsApp, and both shell.openPath() and
+// the Windows "PrintTo" verb EXECUTE executables, shortcuts and scripts, so
+// anything outside this list (.exe, .lnk, .bat, .scr, .hta, .js, .ps1 ...) must
+// never be registered, opened or printed. Keep in sync with
+// supabase/functions/_shared/printable-documents.ts.
+const PRINTABLE_EXTENSIONS = new Set(['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.jpg', '.jpeg', '.png']);
+
+function isPrintableFile(filePath) {
+  return PRINTABLE_EXTENSIONS.has(path.extname(String(filePath || '')).toLowerCase());
+}
+
+function assertPrintableFile(filePath) {
+  if (!isPrintableFile(filePath)) {
+    const extension = path.extname(String(filePath || '')) || '(none)';
+    throw new Error('Unsupported file type ' + extension + '. Printomatic only handles PDF, Word, PowerPoint, Excel, JPG and PNG files.');
+  }
+}
+
+// Same key format the local registry already uses.
+function normalizePathKey(filePath) {
+  return path.resolve(String(filePath)).toLowerCase();
+}
+
+function isInsideDirectory(parent, child) {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function inboxDirectory() {
+  return path.join(app.getPath('userData'), 'printomatic-inbox');
+}
+
+// Paths the user picked through the native file dialog during this session.
+// The renderer can only register files from this set or from the inbox folder,
+// so a compromised page cannot register arbitrary files on the machine.
+const approvedPaths = new Set();
+
+function isRegisteredPath(filePath) {
+  const registry = readRegistry();
+  return Boolean(registry.files && registry.files[normalizePathKey(filePath)]);
+}
+
+function isTrustedAppUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (isDev) return url.origin === DEV_ORIGIN;
+    if (url.protocol !== 'file:') return false;
+    const resolved = path.resolve(fileURLToPath(url));
+    return process.platform === 'win32' ? resolved.toLowerCase() === DIST_INDEX.toLowerCase() : resolved === DIST_INDEX;
+  } catch {
+    return false;
+  }
+}
+
+// Every IPC channel goes through here so only the app's own page can call it.
+function handle(channel, listener) {
+  ipcMain.handle(channel, (event, ...args) => {
+    const frameUrl = event.senderFrame && event.senderFrame.url;
+    if (!frameUrl || !isTrustedAppUrl(frameUrl)) throw new Error('Blocked a native call from an untrusted page.');
+    return listener(event, ...args);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Runtime configuration
+// ---------------------------------------------------------------------------
+
+// VITE_* variables are compiled into the renderer only; the main process cannot
+// see them in a packaged app. `vite build` therefore writes dist/desktop-config.json
+// (see vite.config.ts) and dev mode falls back to reading .env.local / .env.
+let cachedDesktopConfig;
+
+function parseEnvFile(filePath) {
+  const values = {};
+  let text;
+  try { text = fs.readFileSync(filePath, 'utf8'); } catch { return values; }
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!match || match[1].startsWith('#')) continue;
+    values[match[1]] = match[2].replace(/^(['"])(.*)\1$/, '$2');
+  }
+  return values;
+}
+
+function loadDesktopConfig() {
+  if (cachedDesktopConfig !== undefined) return cachedDesktopConfig;
+  let supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+  if (!supabaseUrl) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(path.join(__dirname, '../dist/desktop-config.json'), 'utf8'));
+      if (typeof parsed.supabaseUrl === 'string') supabaseUrl = parsed.supabaseUrl;
+    } catch { /* not built yet */ }
+  }
+  if (!supabaseUrl && isDev) {
+    const root = path.resolve(__dirname, '..');
+    supabaseUrl = parseEnvFile(path.join(root, '.env.local')).VITE_SUPABASE_URL || parseEnvFile(path.join(root, '.env')).VITE_SUPABASE_URL || '';
+  }
+  cachedDesktopConfig = { supabaseUrl: supabaseUrl.trim() };
+  return cachedDesktopConfig;
+}
+
+function getSupabaseOrigin() {
+  const { supabaseUrl } = loadDesktopConfig();
+  if (!supabaseUrl) throw new Error('The Supabase URL is not configured for the desktop app. Set VITE_SUPABASE_URL (see .env.example) and rebuild.');
+  let origin;
+  try { origin = new URL(supabaseUrl).origin; } catch { throw new Error('VITE_SUPABASE_URL is not a valid URL.'); }
+  if (!origin.startsWith('https://')) throw new Error('VITE_SUPABASE_URL must be an https URL.');
+  return origin;
+}
 
 function registryPath() {
   return path.join(app.getPath('userData'), 'local-registry.json');
@@ -76,8 +199,7 @@ function getOrCreateDeviceId() {
 async function downloadRemoteFile(url, suggestedName, expectedSize, token, requestBody = {}) {
   // The desktop process receives this URL from the renderer. Never let it use
   // the user's bearer token to call an arbitrary HTTPS host or follow redirects.
-  const configuredSupabaseUrl = process.env.VITE_SUPABASE_URL || 'https://ngdbwujpfbsgzfwfmddq.supabase.co';
-  const expectedOrigin = new URL(configuredSupabaseUrl).origin;
+  const expectedOrigin = getSupabaseOrigin();
   let target;
   try {
     target = new URL(url);
@@ -98,6 +220,7 @@ async function downloadRemoteFile(url, suggestedName, expectedSize, token, reque
   if (!requestBody || typeof requestBody !== 'object' || Array.isArray(requestBody) || requestBody.action !== 'download' || typeof requestBody.document_id !== 'string' || !requestBody.document_id.trim()) {
     throw new Error('Invalid document download payload.');
   }
+  assertPrintableFile(suggestedName);
   const response = await fetch(target.toString(), {
     method: 'POST',
     redirect: 'error',
@@ -111,7 +234,10 @@ async function downloadRemoteFile(url, suggestedName, expectedSize, token, reque
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.length > maxBytes) throw new Error('Document exceeds the 50 MB desktop limit.');
   const safeName = String(suggestedName || 'whatsapp-document').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+/, '').slice(0, 160) || 'whatsapp-document';
-  const inbox = path.join(app.getPath('userData'), 'printomatic-inbox');
+  // Defence in depth: the server already rejects unsupported types, but never
+  // write a customer-named executable into the inbox.
+  assertPrintableFile(safeName);
+  const inbox = inboxDirectory();
   fs.mkdirSync(inbox, { recursive: true });
   const destination = path.join(inbox, crypto.randomUUID() + '-' + safeName);
   const temp = destination + '.tmp';
@@ -123,6 +249,7 @@ async function downloadRemoteFile(url, suggestedName, expectedSize, token, reque
 function registerLocalFile(filePath) {
   if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('Invalid file path.');
   const absolutePath = path.resolve(filePath);
+  assertPrintableFile(absolutePath);
   const stat = fs.statSync(absolutePath);
   if (!stat.isFile()) throw new Error('Selected path is not a file.');
 
@@ -172,7 +299,23 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
+// The app never needs to show other pages or use browser permissions. Lock
+// navigation, popups, <webview> and permission prompts down for every window.
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('will-navigate', (event, url) => {
+    if (!isTrustedAppUrl(url)) event.preventDefault();
+  });
+  contents.on('will-attach-webview', event => event.preventDefault());
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+});
+
 app.whenReady().then(() => {
+  const defaultSession = session.defaultSession;
+  defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  defaultSession.setPermissionCheckHandler(() => false);
   registerIpc();
   recoverInterruptedPrints();
   void processPrintQueue();
@@ -231,6 +374,7 @@ function resolveRegisteredFile(localFileId) {
   const registry = readRegistry();
   const record = Object.values(registry.files || {}).find(file => file?.localFileId === localFileId);
   if (!record) throw new Error('Local file is not registered on this desktop.');
+  assertPrintableFile(record.path);
   if (!fs.existsSync(record.path)) throw new Error('Registered local file no longer exists.');
   const stat = fs.statSync(record.path);
   if (!stat.isFile()) throw new Error('Registered local path is not a file.');
@@ -239,27 +383,36 @@ function resolveRegisteredFile(localFileId) {
   return { ...record, size: stat.size, modifiedAt: stat.mtime.toISOString(), fingerprint };
 }
 
-function escapePowerShellString(value) {
-  return String(value).replace(/'/g, "''");
-}
+// The script text is a constant. File, printer and copy count travel in
+// environment variables, so nothing a customer controls (file or printer name)
+// is ever interpolated into PowerShell code.
+const POWERSHELL_PRINT_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  '$file = $env:PRINTOMATIC_FILE',
+  '$printer = $env:PRINTOMATIC_PRINTER',
+  '$copies = [int]$env:PRINTOMATIC_COPIES',
+  'for ($i = 0; $i -lt $copies; $i++) {',
+  '  $process = Start-Process -FilePath $file -Verb PrintTo -ArgumentList @($printer) -PassThru -Wait',
+  '  if ($process.ExitCode -ne 0) { exit $process.ExitCode }',
+  '}',
+].join('\n');
 
 function executeWindowsPrint(job) {
   if (process.platform !== 'win32') return Promise.reject(new Error('Native printing is currently supported on Windows only.'));
-  const filePath = escapePowerShellString(job.path);
-  const printerName = escapePowerShellString(job.printerName);
+  try {
+    assertPrintableFile(job.path);
+  } catch (error) {
+    return Promise.reject(error);
+  }
   const copies = Math.max(1, Math.min(99, Number(job.copies) || 1));
-  const script = [
-    "$ErrorActionPreference = 'Stop'",
-    "$file = '" + filePath + "'",
-    "$printer = '" + printerName + "'",
-    "$copies = " + copies,
-    'for ($i = 0; $i -lt $copies; $i++) {',
-    '  $process = Start-Process -FilePath $file -Verb PrintTo -ArgumentList @($printer) -PassThru -Wait',
-    '  if ($process.ExitCode -ne 0) { exit $process.ExitCode }',
-    '}',
-  ].join('; ');
+  const env = {
+    ...process.env,
+    PRINTOMATIC_FILE: String(job.path),
+    PRINTOMATIC_PRINTER: String(job.printerName),
+    PRINTOMATIC_COPIES: String(copies),
+  };
   return new Promise((resolve, reject) => {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true }, error => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', POWERSHELL_PRINT_SCRIPT], { windowsHide: true, env }, error => {
       if (error) reject(new Error('Windows print submission failed: ' + error.message));
       else resolve();
     });
@@ -452,7 +605,7 @@ async function createPrintPreview(input) {
 }
 
 function registerIpc() {
-  ipcMain.handle('system:info', () => ({
+  handle('system:info', () => ({
     platform: process.platform,
     arch: process.arch,
     hostname: os.hostname(),
@@ -461,28 +614,42 @@ function registerIpc() {
     deviceId: getOrCreateDeviceId(),
   }));
 
-  ipcMain.handle('files:choose', async () => {
+  handle('files:choose', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile', 'multiSelections'],
       filters: [
-        { name: 'Documents', extensions: ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png'] },
-        { name: 'All files', extensions: ['*'] },
+        { name: 'Documents', extensions: Array.from(PRINTABLE_EXTENSIONS).map(extension => extension.slice(1)) },
       ],
     });
-    return result.canceled ? [] : result.filePaths;
+    if (result.canceled) return [];
+    const accepted = result.filePaths.filter(isPrintableFile);
+    if (result.filePaths.length && !accepted.length) {
+      throw new Error('Unsupported file type. Printomatic only handles PDF, Word, PowerPoint, Excel, JPG and PNG files.');
+    }
+    for (const filePath of accepted) approvedPaths.add(normalizePathKey(filePath));
+    return accepted;
   });
 
-  ipcMain.handle('files:stat', (_, filePath) => {
-    if (typeof filePath !== 'string') throw new Error('Invalid file path');
+  handle('files:stat', (_, filePath) => {
+    if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('Invalid file path');
+    if (!isRegisteredPath(filePath)) throw new Error('This file is not registered on this desktop.');
     const stat = fs.statSync(filePath);
     return { path: filePath, name: path.basename(filePath), size: stat.size, modifiedAt: stat.mtime.toISOString(), isFile: stat.isFile() };
   });
 
-  ipcMain.handle('files:register', (_, filePath) => registerLocalFile(filePath));
+  handle('files:register', (_, filePath) => {
+    if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('Invalid file path.');
+    if (!approvedPaths.has(normalizePathKey(filePath)) && !isInsideDirectory(inboxDirectory(), filePath)) {
+      throw new Error('Only files chosen with the file picker can be registered.');
+    }
+    return registerLocalFile(filePath);
+  });
 
-  ipcMain.handle('files:open', async (_, filePath) => {
+  handle('files:open', async (_, filePath) => {
     if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('Invalid file path.');
     const absolutePath = path.resolve(filePath);
+    if (!isRegisteredPath(absolutePath)) throw new Error('This document is not registered on this desktop.');
+    assertPrintableFile(absolutePath);
     if (!fs.existsSync(absolutePath)) throw new Error('The local document no longer exists.');
     const stat = fs.statSync(absolutePath);
     if (!stat.isFile()) throw new Error('The local document path is not a file.');
@@ -490,7 +657,7 @@ function registerIpc() {
     if (openError) throw new Error('Could not open the document: ' + openError);
   });
 
-  ipcMain.handle('files:resolve', (_, localFileId) => {
+  handle('files:resolve', (_, localFileId) => {
     if (typeof localFileId !== 'string' || !localFileId.trim()) throw new Error('Invalid local file ID.');
     const registry = readRegistry();
     const record = Object.values(registry.files || {}).find(file => file?.localFileId === localFileId);
@@ -498,12 +665,12 @@ function registerIpc() {
     return { localFileId: record.localFileId, path: record.path, name: record.name, size: record.size, modifiedAt: record.modifiedAt, fingerprint: record.fingerprint };
   });
 
-  ipcMain.handle('files:importRemote', async (_, input) => {
+  handle('files:importRemote', async (_, input) => {
     if (!input || typeof input !== 'object') throw new Error('Invalid document download request.');
     return downloadRemoteFile(input.url, input.fileName, input.expectedSize, input.token, input.body);
   });
 
-  ipcMain.handle('printers:list', () => new Promise((resolve, reject) => {
+  handle('printers:list', () => new Promise((resolve, reject) => {
     if (process.platform !== 'win32') { resolve([]); return; }
     const command = 'Get-Printer | Select-Object Name,PrinterStatus,DriverName,PortName,WorkOffline | ConvertTo-Json -Compress';
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { windowsHide: true }, (error, stdout) => {
@@ -517,7 +684,7 @@ function registerIpc() {
     });
   }));
 
-  ipcMain.handle('print:enqueue', (_, input) => {
+  handle('print:enqueue', (_, input) => {
     if (!input || typeof input !== 'object') throw new Error('Invalid print request.');
     if (typeof input.jobId !== 'string' || !input.jobId.trim()) throw new Error('Invalid print job ID.');
     if (typeof input.localFileId !== 'string' || !input.localFileId.trim()) throw new Error('Invalid local file ID.');
@@ -550,9 +717,9 @@ function registerIpc() {
     return job;
   });
 
-  ipcMain.handle('print:create-preview', async (_, input) => createPrintPreview(input));
+  handle('print:create-preview', async (_, input) => createPrintPreview(input));
 
-  ipcMain.handle('print:test-document', async () => {
+  handle('print:test-document', async () => {
     const pdf = await PDFDocument.create();
     const page = pdf.addPage([612, 792]);
     const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -570,9 +737,9 @@ function registerIpc() {
     return { path: filePath, name: path.basename(filePath) };
   });
 
-  ipcMain.handle('print:queue', () => readPrintQueue());
+  handle('print:queue', () => readPrintQueue());
 
-  ipcMain.handle('printer:open', (_, printerName) => {
+  handle('printer:open', (_, printerName) => {
     if (process.platform !== 'win32') throw new Error('Printer actions are currently supported on Windows only.');
     if (typeof printerName !== 'string' || !printerName.trim()) throw new Error('Invalid printer name.');
     return new Promise((resolve, reject) => {

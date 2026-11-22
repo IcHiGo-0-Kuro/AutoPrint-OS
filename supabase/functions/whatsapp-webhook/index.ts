@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getWhatsAppProvider } from "./provider.ts";
+import { getWhatsAppProvider } from "../_shared/whatsapp-provider.ts";
+import { resolvePrintableDocument } from "../_shared/printable-documents.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -124,7 +125,8 @@ async function sendNextQuestion(phoneNumberId: string, customerNumber: string, c
 Deno.serve(async (request) => {
   if (request.method === "GET") {
     const url = new URL(request.url);
-    if (url.searchParams.get("hub.mode") !== "subscribe" || url.searchParams.get("hub.verify_token") !== verifyToken) {
+    const suppliedToken = url.searchParams.get("hub.verify_token") || "";
+    if (!verifyToken || url.searchParams.get("hub.mode") !== "subscribe" || suppliedToken !== verifyToken) {
       return new Response("Forbidden", { status: 403 });
     }
     return new Response(url.searchParams.get("hub.challenge") || "", { status: 200 });
@@ -218,6 +220,24 @@ Deno.serve(async (request) => {
     });
     if (insertedMessage.error) throw insertedMessage.error;
 
+    // Only printable document/image types may enter the order flow. The shop
+    // desktop opens these files, so anything else (executables, shortcuts,
+    // scripts, video) is turned away here before an order or document row exists.
+    let printableName: string | null = null;
+    if (media) {
+      const fallbackName = "whatsapp-" + String(message.id || crypto.randomUUID()).replace(/[^A-Za-z0-9]/g, "").slice(-12);
+      printableName = type === "video" ? null : resolvePrintableDocument(media.filename || fallbackName, media.mime_type);
+      if (!printableName) {
+        await sendProviderText(
+          phoneNumberId,
+          customerNumber,
+          "Sorry, we can only print PDF, Word, PowerPoint, Excel, JPG or PNG files. Please send your file again in one of those formats.",
+          conversation.id,
+        );
+        return json({ ok: true, rejected: "unsupported_file_type" });
+      }
+    }
+
     let { data: order } = await supabase
       .from("whatsapp_orders")
       .select("id,intake_step,status,customer_name,copies,color_mode,paper_size,sides,page_count,amount,payment_status,payment_reference,token_number,short_number")
@@ -247,7 +267,7 @@ Deno.serve(async (request) => {
     let nextStep = conversation.current_step || order.intake_step || "awaiting_document";
 
     if (type === "document" || type === "image" || type === "video") {
-      const documentName = media?.filename || `whatsapp-${message.id || crypto.randomUUID()}`;
+      const documentName = printableName || `whatsapp-${crypto.randomUUID()}`;
       const { error: docError } = await supabase.from("whatsapp_documents").insert({
         order_id: order.id,
         shop_id: connection.shop_id,
@@ -332,14 +352,7 @@ Deno.serve(async (request) => {
       last_message_at: new Date().toISOString(),
     }).eq("id", conversation.id);
 
-    const refreshed = await supabase.from("whatsapp_orders")
-      .select("customer_name,copies,color_mode,paper_size,sides,page_count,amount,payment_status,payment_reference,token_number,short_number")
-      .eq("id", order.id)
-      .single();
-    if (refreshed.error) throw refreshed.error;
-
     await sendNextQuestion(phoneNumberId, customerNumber, conversation.id, nextStep);
-    }
 
     return json({ ok: true, order_id: order.id, step: nextStep });
   } catch (error) {

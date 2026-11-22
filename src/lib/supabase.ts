@@ -1,13 +1,16 @@
-const configuredUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const configuredKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
-
-const url = (configuredUrl || 'https://ngdbwujpfbsgzfwfmddq.supabase.co').replace(/\/$/, '');
-const key = configuredKey || 'sb_publishable_tKjMe7fU3yBzn3HwdbbNuw_W8xzdqv1';
+// No built-in fallbacks: a missing .env must fail loudly instead of silently
+// pointing the app (and a customer's session token) at a hardcoded project.
+const url = ((import.meta.env.VITE_SUPABASE_URL as string | undefined) || '').trim().replace(/\/$/, '');
+const key = ((import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) || '').trim();
 const STORAGE_KEY = 'autoprint.supabase.session';
 
 export type Session={access_token:string;refresh_token:string;expires_at?:number;user:{id:string;email?:string}};
 
 export function isSupabaseConfigured(){return Boolean(url&&key)}
+export function getSupabaseConfig(){
+  if(!url||!key)throw new Error('Supabase is not configured. Copy .env.example to .env.local and set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.');
+  return {url,key};
+}
 export function getStoredSession():Session|null{try{const raw=localStorage.getItem(STORAGE_KEY);return raw?JSON.parse(raw):null}catch{return null}}
 function store(s:Session|null){if(s)localStorage.setItem(STORAGE_KEY,JSON.stringify(s));else localStorage.removeItem(STORAGE_KEY)}
 

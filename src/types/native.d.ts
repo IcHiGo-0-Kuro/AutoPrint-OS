@@ -33,6 +33,22 @@ declare global {
           registeredAt: string;
         }>;
         open: (filePath: string) => Promise<void>;
+        importRemote: (input: {
+          url: string;
+          fileName: string;
+          expectedSize?: number;
+          token?: string;
+          body: { action: 'download'; document_id: string };
+        }) => Promise<{
+          deviceId: string;
+          localFileId: string;
+          path: string;
+          name: string;
+          size: number;
+          modifiedAt: string;
+          fingerprint: string;
+          registeredAt: string;
+        }>;
         resolve: (localFileId: string) => Promise<{
           localFileId: string;
           path: string;
