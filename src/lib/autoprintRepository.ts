@@ -1,4 +1,4 @@
-import { db, getStoredSession, refreshSession } from './supabase';
+import { db, getStoredSession, refreshSession, getSupabaseConfig } from './supabase';
 import { getLocalFilePath } from './localStore';
 import { PrintJob, PrinterDevice, ShopProfile } from '../types';
 
@@ -107,8 +107,7 @@ export async function loadWorkspace(shopId?: string): Promise<{ shop: ShopProfil
 export async function syncWhatsAppDocuments() {
   const session = getStoredSession();
   if (!session) return { imported: 0, failed: 0, documents: [] as any[] };
-  const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined || 'https://ngdbwujpfbsgzfwfmddq.supabase.co').replace(/\/$/, '');
-  const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined || 'sb_publishable_tKjMe7fU3yBzn3HwdbbNuw_W8xzdqv1';
+  const { url: base, key } = getSupabaseConfig();
   const headers = { apikey: key, Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' };
   const listResponse = await fetch(base + '/functions/v1/whatsapp-media-sync', { method: 'POST', headers, body: JSON.stringify({ action: 'list' }) });
   const listData = await listResponse.json();
@@ -147,8 +146,7 @@ export async function syncWhatsAppDocuments() {
 export async function notifyNoPrinter(documentId: string) {
   const session = getStoredSession();
   if (!session) throw new Error('Not signed in.');
-  const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined || 'https://ngdbwujpfbsgzfwfmddq.supabase.co').replace(/\/$/, '');
-  const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined || 'sb_publishable_tKjMe7fU3yBzn3HwdbbNuw_W8xzdqv1';
+  const { url: base, key } = getSupabaseConfig();
   const response = await fetch(base + '/functions/v1/whatsapp-media-sync', {
     method: 'POST',
     headers: { apikey: key, Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },

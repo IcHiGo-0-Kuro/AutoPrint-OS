@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getWhatsAppProvider } from "./provider.ts";
+import { getWhatsAppProvider } from "../_shared/whatsapp-provider.ts";
+import { resolvePrintableDocument } from "../_shared/printable-documents.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,7 +8,8 @@ const corsHeaders = {
 };
 
 const MAX_BYTES = 50 * 1024 * 1024;
-const META_GRAPH_VERSION = "v23.0";
+const META_GRAPH_VERSION = Deno.env.get("WHATSAPP_GRAPH_VERSION") || "v23.0";
+const LOCAL_FILE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -34,7 +36,7 @@ async function getDocument(admin: any, documentId: string, shopIds: string[]) {
   if (!documentId || !shopIds.length) return null;
   const { data, error } = await admin
     .from("whatsapp_documents")
-    .select("id,order_id,shop_id,provider_media_id,document_name,mime_type,size_bytes,intake_status,media_download_status")
+    .select("id,order_id,shop_id,provider_media_id,document_name,mime_type,size_bytes,intake_status,media_download_status,metadata")
     .eq("id", documentId)
     .in("shop_id", shopIds)
     .maybeSingle();
@@ -48,13 +50,17 @@ async function resolveMetaMedia(mediaId: string, accessToken: string) {
   });
   const data = await meta.json().catch(() => ({}));
   if (!meta.ok || !data?.url) throw new Error("WhatsApp media could not be resolved.");
+  // The bearer token is sent to this URL, so never follow a non-https one.
+  let mediaUrl: URL;
+  try { mediaUrl = new URL(data.url); } catch { throw new Error("WhatsApp media URL is invalid."); }
+  if (mediaUrl.protocol !== "https:") throw new Error("WhatsApp media URL must use https.");
   return data;
 }
 
-async function markFailed(admin: any, documentId: string, message: string) {
+async function markFailed(admin: any, documentId: string, message: string, existingMetadata: Record<string, unknown> = {}) {
   await admin.from("whatsapp_documents").update({
     media_download_status: "failed",
-    metadata: { transport_error: message.slice(0, 500), transport_failed_at: new Date().toISOString() },
+    metadata: { ...existingMetadata, transport_error: message.slice(0, 500), transport_failed_at: new Date().toISOString() },
   }).eq("id", documentId);
 }
 
@@ -73,11 +79,7 @@ Deno.serve(async (request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const authClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: "Bearer " + accessToken } },
-  });
-  const { data: userData, error: userError } = await authClient.auth.getUser(accessToken);
+  const { data: userData, error: userError } = await admin.auth.getUser(accessToken);
   if (userError || !userData.user) return json({ error: "Invalid session." }, 401);
 
   let body: any = {};
@@ -94,7 +96,7 @@ Deno.serve(async (request) => {
       .select("id,order_id,shop_id,document_name,mime_type,size_bytes,provider_media_id,intake_status,media_download_status,created_at")
       .in("shop_id", shopIds)
       .eq("intake_status", "awaiting_desktop_import")
-      .in("media_download_status", ["pending", "failed"])
+      .in("media_download_status", ["pending", "failed", "downloading"])
       .order("created_at", { ascending: true })
       .limit(25);
     if (error) return json({ error: "Could not load pending documents." }, 500);
@@ -106,13 +108,14 @@ Deno.serve(async (request) => {
     const document = await getDocument(admin, documentId, shopIds);
     if (!document) return json({ error: "Document not found." }, 404);
     const localFileId = String(body?.local_file_id || "");
-    if (!localFileId) return json({ error: "local_file_id is required." }, 400);
+    if (!LOCAL_FILE_ID_PATTERN.test(localFileId)) return json({ error: "local_file_id must be a valid UUID." }, 400);
+    if (document.intake_status === "rejected") return json({ error: "This document was rejected and cannot be acknowledged." }, 409);
     const { error } = await admin.from("whatsapp_documents").update({
       local_file_id: localFileId,
       intake_status: "available_locally",
       media_download_status: "available_locally",
       media_downloaded_at: new Date().toISOString(),
-      metadata: { local_device_id: body?.device_id ? String(body.device_id) : null },
+      metadata: { ...(document.metadata || {}), local_device_id: body?.device_id ? String(body.device_id).slice(0, 64) : null },
     }).eq("id", documentId);
     if (error) return json({ error: "Could not acknowledge the local document." }, 500);
 
@@ -133,12 +136,19 @@ Deno.serve(async (request) => {
       if (existing) {
         printJobId = existing.id;
       } else {
-        const { data: member } = await admin.from("shop_members")
-          .select("user_id")
-          .eq("shop_id", order.shop_id)
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle();
+        // Jobs created by the WhatsApp agent belong to the shop owner; only fall
+        // back to the oldest member when the shop has no recorded owner.
+        const { data: shop } = await admin.from("shops").select("owner_id").eq("id", order.shop_id).maybeSingle();
+        let jobOwnerId: string | null = shop?.owner_id || null;
+        if (!jobOwnerId) {
+          const { data: member } = await admin.from("shop_members")
+            .select("user_id")
+            .eq("shop_id", order.shop_id)
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          jobOwnerId = member?.user_id || null;
+        }
         const { data: printer } = await admin.from("printers")
           .select("id")
           .eq("shop_id", order.shop_id)
@@ -152,13 +162,13 @@ Deno.serve(async (request) => {
           .order("queue_number", { ascending: false })
           .limit(1)
           .maybeSingle();
-        if (!member?.user_id) return json({ error: "No shop member is available to own the print job." }, 500);
+        if (!jobOwnerId) return json({ error: "No shop member is available to own the print job." }, 500);
 
         const copies = Math.max(1, Math.min(999, Number(order.copies) || 1));
         const pageCount = Math.max(1, Number(order.page_count) || 1);
         const { data: job, error: jobError } = await admin.from("print_jobs").insert({
-          user_id: member.user_id,
-          created_by: member.user_id,
+          user_id: jobOwnerId,
+          created_by: jobOwnerId,
           shop_id: order.shop_id,
           printer_id: printer?.id || null,
           document_name: document.document_name,
@@ -258,6 +268,12 @@ Deno.serve(async (request) => {
     const document = await getDocument(admin, documentId, shopIds);
     if (!document || !document.provider_media_id) return json({ error: "Document is not available for download." }, 404);
     if (!whatsappAccessToken) return json({ error: "WhatsApp media access is not configured on the server." }, 500);
+    if (document.intake_status === "rejected") return json({ error: "This document was rejected." }, 409);
+    if (!resolvePrintableDocument(document.document_name, document.mime_type)) {
+      // Never hand a non-printable file (e.g. an executable) to the shop desktop.
+      await admin.from("whatsapp_documents").update({ intake_status: "rejected" }).eq("id", documentId);
+      return json({ error: "Unsupported file type." }, 415);
+    }
 
     try {
       await admin.from("whatsapp_documents").update({ media_download_status: "downloading" }).eq("id", documentId);
@@ -282,7 +298,7 @@ Deno.serve(async (request) => {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Media download failed.";
-      await markFailed(admin, documentId, message);
+      await markFailed(admin, documentId, message, document.metadata || {});
       return json({ error: message }, 502);
     }
   }

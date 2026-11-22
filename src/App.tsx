@@ -98,7 +98,12 @@ export default function App() {
     if (!connectedToCloud || !window.autoPrintNative || !shopProfile.id) return;
 
     let active = true;
+    // The timer fires every 10 s; a slow download must not start a second,
+    // overlapping import of the same documents.
+    let syncing = false;
     const sync = async () => {
+      if (syncing) return;
+      syncing = true;
       try {
         const result = await syncWhatsAppDocuments();
         if (!active) return;
@@ -132,6 +137,8 @@ export default function App() {
         }
       } catch (error) {
         if (active) setWorkspaceError(error instanceof Error ? error.message : 'WhatsApp document synchronization failed.');
+      } finally {
+        syncing = false;
       }
     };
 
